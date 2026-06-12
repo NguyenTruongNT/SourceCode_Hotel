@@ -53,7 +53,7 @@ export const INITIAL_ROOMS: Room[] = [
 export const INITIAL_BOOKINGS: Booking[] = [
   // OCCUPIED BOOKINGS
   {
-    id: 'B-001',
+    id: 'THAD-20260530-G5H6I',
     guestName: 'Nguyễn Văn Nam',
     phone: '0901234567',
     checkInDate: getRelativeDate(-2),
@@ -64,7 +64,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     cccd: '001090123456'
   },
   {
-    id: 'B-003',
+    id: 'THAD-20260987-G7TY1',
     guestName: 'Trần Thị Mai',
     phone: '0987654321',
     checkInDate: getRelativeDate(-1),
@@ -75,7 +75,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     cccd: '001080654321'
   },
   {
-    id: 'B-004',
+    id: 'THAD-20261111-AI86I',
     guestName: 'Lê Hoàng Phong',
     phone: '0912345678',
     checkInDate: getRelativeDate(-3),
@@ -86,7 +86,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     cccd: '031085123456'
   },
   {
-    id: 'B-005',
+    id: 'THAD-20268792-GY23I',
     guestName: 'Phạm Thu Trang',
     phone: '0933445566',
     checkInDate: getRelativeDate(-1),
@@ -97,7 +97,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     cccd: '042095112233'
   },
   {
-    id: 'B-007',
+    id: 'THAD-20266630-XEY2I',
     guestName: 'Đặng Quốc Bảo',
     phone: '0966778899',
     checkInDate: getRelativeDate(-4),
@@ -108,7 +108,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     cccd: '079090112233'
   },
   {
-    id: 'B-008',
+    id: 'THAD-20264530-G98UI',
     guestName: 'Vũ Đức Đam',
     phone: '0944556677',
     checkInDate: getRelativeDate(0), // Check-in today
@@ -119,7 +119,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     cccd: '001070998877'
   },
   {
-    id: 'B-010',
+    id: 'THAD-20269910-G1NPI',
     guestName: 'Nguyễn Tấn Dũng',
     phone: '0999888777',
     checkInDate: getRelativeDate(-1),
@@ -132,7 +132,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
 
   // BOOKED (Upcoming)
   {
-    id: 'B-002',
+    id: 'THAD-20261234-GFG5I',
     guestName: 'Lý Nhã Kỳ',
     phone: '0900112233',
     checkInDate: getRelativeDate(1), // Check-in tomorrow
@@ -141,7 +141,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     guestCount: 1,
   },
   {
-    id: 'B-006',
+    id: 'THAD-20264430-KLH6I',
     guestName: 'Hồ Ngọc Hà',
     phone: '0911223344',
     checkInDate: getRelativeDate(0), // Check-in today
@@ -150,7 +150,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     guestCount: 2,
   },
   {
-    id: 'B-009',
+    id: 'THAD-20269740-RFV1I',
     guestName: 'Đàm Vĩnh Hưng',
     phone: '0988776655',
     checkInDate: getRelativeDate(2),
@@ -159,7 +159,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     guestCount: 2,
   },
   {
-    id: 'B-011',
+    id: 'THAD-20260050-GUH11',
     guestName: 'Trấn Thành',
     phone: '0922334455',
     checkInDate: getRelativeDate(0),
