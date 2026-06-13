@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, Filter, Printer, CreditCard, Banknote, Edit3, CheckCircle2, X } from 'lucide-react';
+import { Search, Filter, Printer, CreditCard, Banknote, Edit3, CheckCircle2, X, AlertCircle } from 'lucide-react';
 import { useAdmin } from '@/app/admin/AdminProvider';
 import { RoomStatus } from '@/app/admin/types';
 
@@ -12,6 +12,8 @@ export default function CheckoutPage() {
   const [showInvoice, setShowInvoice] = useState(false);
   const [checkoutComplete, setCheckoutComplete] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showPrintInvoice, setShowPrintInvoice] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('card');
   
   // Custom fee states
   const [feeName, setFeeName] = useState('');
@@ -75,9 +77,6 @@ export default function CheckoutPage() {
     }
 
     setCheckoutComplete(true);
-    setTimeout(() => {
-      setSelectedRoom(null);
-    }, 2000);
   };
 
   return (
@@ -247,11 +246,15 @@ export default function CheckoutPage() {
                       <div className="space-y-3">
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Phương thức thanh toán</p>
                         <div className="grid grid-cols-2 gap-3">
-                          <button className="flex flex-col items-center justify-center p-3 border-2 border-blue-500 bg-blue-50 rounded-lg text-blue-700 transition-colors">
+                          <button 
+                            onClick={() => setPaymentMethod('card')}
+                            className={`flex flex-col items-center justify-center p-3 border-2 rounded-lg transition-colors ${paymentMethod === 'card' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-600'}`}>
                             <CreditCard className="h-6 w-6 mb-1" />
-                            <span className="text-xs font-bold">Thẻ tín dụng / Chuyển khoản</span>
+                            <span className="text-xs font-bold">Thẻ tín dụng / CK</span>
                           </button>
-                          <button className="flex flex-col items-center justify-center p-3 border-2 border-slate-200 hover:border-slate-300 rounded-lg text-slate-600 transition-colors">
+                          <button 
+                            onClick={() => setPaymentMethod('cash')}
+                            className={`flex flex-col items-center justify-center p-3 border-2 rounded-lg transition-colors ${paymentMethod === 'cash' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-600'}`}>
                             <Banknote className="h-6 w-6 mb-1" />
                             <span className="text-xs font-bold">Tiền mặt</span>
                           </button>
@@ -304,18 +307,143 @@ export default function CheckoutPage() {
             <p className="text-slate-500 text-center mb-6">Phòng {selectedRoom?.id} đã được chuyển sang trạng thái chờ dọn dẹp.<br/>Hóa đơn đã được gửi qua email cho khách hàng.</p>
             <div className="flex gap-3">
               <button 
-                onClick={() => setCheckoutComplete(false)}
+                onClick={() => {
+                  setCheckoutComplete(false);
+                  setSelectedRoom(null);
+                }}
                 className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors text-sm"
               >
                 Đóng
               </button>
               <button 
-                onClick={() => alert("Đang xuất file PDF hóa đơn...")}
+                onClick={() => setShowPrintInvoice(true)}
                 className="px-6 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-lg flex items-center gap-2 transition-colors text-sm shadow-md"
               >
                 <Printer className="h-4 w-4" /> Xuất hóa đơn (PDF)
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Printable Invoice Modal */}
+      {showPrintInvoice && selectedRoom && (
+        <div className="fixed inset-0 z-[100] bg-white overflow-y-auto print:p-0 p-8">
+          <div className="max-w-3xl mx-auto bg-white print:shadow-none shadow-2xl border border-slate-200 print:border-none p-10 rounded-xl relative">
+            <button 
+              onClick={() => setShowPrintInvoice(false)} 
+              className="absolute top-4 right-4 text-slate-400 hover:bg-slate-100 p-2 rounded-full print:hidden"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            
+            <div className="flex justify-between items-start border-b-2 border-slate-800 pb-6 mb-8">
+              <div>
+                <h1 className="text-3xl font-black tracking-widest text-slate-900">THAD<span className="text-blue-600 font-medium tracking-normal">HOTEL</span></h1>
+                <p className="text-sm text-slate-500 mt-1">123 Đường Ven Biển, Quận Sơn Trà, Đà Nẵng</p>
+                <p className="text-sm text-slate-500">Tel: 0236 3838 888 | Email: contact@thadhotel.vn</p>
+              </div>
+              <div className="text-right">
+                <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-widest">Hóa đơn</h2>
+                <p className="text-sm text-slate-500 mt-1">Số: <span className="font-semibold text-slate-800">INV-{new Date().getTime().toString().slice(-6)}</span></p>
+                <p className="text-sm text-slate-500">Ngày: <span className="font-semibold text-slate-800">{new Date().toLocaleDateString('vi-VN')}</span></p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-8 mb-8">
+              <div>
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Khách hàng</h3>
+                <p className="text-lg font-bold text-slate-800">{selectedRoom.name}</p>
+              </div>
+              <div className="text-right">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Thông tin phòng</h3>
+                <p className="font-semibold text-slate-800">Phòng {selectedRoom.id} ({selectedRoom.type})</p>
+                <p className="text-sm text-slate-600">{selectedRoom.checkIn} - {selectedRoom.checkout}</p>
+                <p className="text-sm text-slate-600">{selectedRoom.days} đêm</p>
+              </div>
+            </div>
+
+            <table className="w-full mb-8">
+              <thead>
+                <tr className="bg-slate-100 text-slate-600 text-sm">
+                  <th className="text-left py-3 px-4 font-semibold rounded-tl-lg rounded-bl-lg">Hạng mục</th>
+                  <th className="text-center py-3 px-4 font-semibold">Đơn giá</th>
+                  <th className="text-center py-3 px-4 font-semibold">SL</th>
+                  <th className="text-right py-3 px-4 font-semibold rounded-tr-lg rounded-br-lg">Thành tiền</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                <tr>
+                  <td className="py-4 px-4">Tiền phòng ({selectedRoom.type})</td>
+                  <td className="py-4 px-4 text-center">{selectedRoom.price.toLocaleString('vi-VN')}đ</td>
+                  <td className="py-4 px-4 text-center">{selectedRoom.days}</td>
+                  <td className="py-4 px-4 text-right font-medium text-slate-800">{(selectedRoom.price * selectedRoom.days).toLocaleString('vi-VN')}đ</td>
+                </tr>
+                <tr>
+                  <td className="py-4 px-4">Nước suối x2</td>
+                  <td className="py-4 px-4 text-center">20.000đ</td>
+                  <td className="py-4 px-4 text-center">2</td>
+                  <td className="py-4 px-4 text-right font-medium text-slate-800">40.000đ</td>
+                </tr>
+                <tr>
+                  <td className="py-4 px-4">Giặt ủi</td>
+                  <td className="py-4 px-4 text-center">150.000đ</td>
+                  <td className="py-4 px-4 text-center">1</td>
+                  <td className="py-4 px-4 text-right font-medium text-slate-800">150.000đ</td>
+                </tr>
+                <tr>
+                  <td className="py-4 px-4 text-rose-600">Phụ thu trả phòng trễ</td>
+                  <td className="py-4 px-4 text-center">300.000đ</td>
+                  <td className="py-4 px-4 text-center">1</td>
+                  <td className="py-4 px-4 text-right font-medium text-rose-600">300.000đ</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div className="flex justify-end mb-12">
+              <div className="w-80 space-y-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Cộng tiền dịch vụ</span>
+                  <span className="font-semibold text-slate-800">{((selectedRoom.price * selectedRoom.days) + 490000).toLocaleString('vi-VN')}đ</span>
+                </div>
+                <div className="flex justify-between text-emerald-600">
+                  <span>Trừ tiền cọc (Deposit)</span>
+                  <span className="font-semibold">-1.000.000đ</span>
+                </div>
+                <div className="flex justify-between items-center pt-3 border-t-2 border-slate-800 text-lg">
+                  <span className="font-bold text-slate-800">Tổng thanh toán</span>
+                  <span className="font-black text-blue-600">{((selectedRoom.price * selectedRoom.days) + 490000 - 1000000).toLocaleString('vi-VN')}đ</span>
+                </div>
+                <div className="flex justify-between text-slate-500 pt-1 text-xs">
+                  <span>Phương thức:</span>
+                  <span className="font-semibold uppercase">{paymentMethod === 'card' ? 'Thẻ / Chuyển khoản' : 'Tiền mặt'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between text-center pt-8">
+              <div>
+                <p className="font-bold text-slate-800 mb-16">Khách hàng</p>
+                <p className="text-slate-500 italic">(Ký, ghi rõ họ tên)</p>
+              </div>
+              <div>
+                <p className="font-bold text-slate-800 mb-16">Nhân viên Lễ tân</p>
+                <p className="text-slate-500 italic">(Ký, ghi rõ họ tên)</p>
+              </div>
+            </div>
+            
+            <div className="mt-12 text-center text-xs text-slate-400 border-t border-slate-100 pt-6">
+              Cảm ơn quý khách đã tin tưởng và sử dụng dịch vụ của THAD HOTEL!
+            </div>
+          </div>
+          
+          <div className="fixed bottom-8 right-8 flex gap-4 print:hidden">
+            <button 
+              onClick={() => window.print()}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-2xl flex items-center gap-2 transition-transform hover:scale-105"
+            >
+              <Printer className="h-5 w-5" /> In hóa đơn ngay
+            </button>
           </div>
         </div>
       )}

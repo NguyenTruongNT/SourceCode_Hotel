@@ -418,14 +418,10 @@ export default function EventsManagementPage() {
                   setShowConfirmPopup(false);
                   setIsSaving(true);
                   
-                  // Simulate 50% network error after loading
+                  // Remove simulated network error for production
                   setTimeout(() => {
                     setIsSaving(false);
-                    const isNetworkError = Math.random() > 0.7; // 30% error
-                    if (isNetworkError) {
-                      setErrorToast("Lỗi mạng: Không thể kết nối đến máy chủ. Dữ liệu chưa được lưu.");
-                    } else {
-                      // Success
+                    // Success
                       if (editingEvent) {
                         setEvents(prev => prev.map(ev => ev.id === editingEvent.id ? { 
                           ...ev, 
@@ -448,7 +444,6 @@ export default function EventsManagementPage() {
                       }
                       setToastMessage("Lưu bài viết thành công!");
                       setIsAddPanelOpen(false);
-                    }
                   }, 1500);
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 flex items-center gap-2"
