@@ -53,4 +53,8 @@ export interface HotelEvent {
   link: string;
   isScheduled?: boolean;
   publishDate?: string;
+  startDate?: string;
+  endDate?: string;
+  maxPeople?: number;
+  discountPercent?: number;
 }

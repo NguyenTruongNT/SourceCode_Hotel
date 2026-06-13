@@ -1,6 +1,7 @@
 import { SiteHeader } from "@/components/site-header"
 import { SiteFooter } from "@/components/site-footer"
 import Image from "next/image"
+import Link from "next/link"
 
 export default function EventsPage() {
   return (
@@ -28,7 +29,7 @@ export default function EventsPage() {
           <div className="max-w-6xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
               {/* Event 1 */}
-              <div className="group rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-md transition-all">
+              <Link href="/events/ev-002" className="group rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-md transition-all block">
                 <div className="relative h-64 overflow-hidden">
                   <Image
                     src="/images/exp-spa.png"
@@ -45,13 +46,13 @@ export default function EventsPage() {
                   <p className="text-slate-600 mb-6">Tận hưởng không gian thư giãn tuyệt đối với gói nghỉ dưỡng bao gồm phòng Superior và 1 liệu trình massage toàn thân miễn phí dành cho 2 người.</p>
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-semibold text-slate-400">Áp dụng đến 30/08/2026</span>
-                    <button className="text-blue-600 font-bold hover:text-blue-700 transition-colors">Xem chi tiết &rarr;</button>
+                    <span className="text-blue-600 font-bold group-hover:text-blue-700 transition-colors">Xem chi tiết &rarr;</span>
                   </div>
                 </div>
-              </div>
+              </Link>
 
               {/* Event 2 */}
-              <div className="group rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-md transition-all">
+              <Link href="/events/ev-003" className="group rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-md transition-all block">
                 <div className="relative h-64 overflow-hidden">
                   <Image
                     src="/images/exp-pool.png"
@@ -68,10 +69,10 @@ export default function EventsPage() {
                   <p className="text-slate-600 mb-6">Hòa mình vào không khí sôi động với DJ quốc tế, đồ uống nhiệt đới không giới hạn và tiệc nướng BBQ hấp dẫn bên cạnh hồ bơi vô cực.</p>
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-semibold text-slate-400">Diễn ra vào Thứ 7 hàng tuần</span>
-                    <button className="text-blue-600 font-bold hover:text-blue-700 transition-colors">Đặt chỗ ngay &rarr;</button>
+                    <span className="text-blue-600 font-bold group-hover:text-blue-700 transition-colors">Xem chi tiết &rarr;</span>
                   </div>
                 </div>
-              </div>
+              </Link>
             </div>
           </div>
         </section>

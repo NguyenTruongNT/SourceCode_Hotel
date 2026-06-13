@@ -20,6 +20,7 @@ export default function EventsManagementPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [fileError, setFileError] = useState(false);
   const [showError, setShowError] = useState(false); // Form validation error
+  const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
 
@@ -29,7 +30,11 @@ export default function EventsManagementPage() {
     type: 'Sự kiện',
     isScheduled: false,
     publishDate: '',
-    image: '/placeholder.svg'
+    image: '/placeholder.svg',
+    startDate: '',
+    endDate: '',
+    maxPeople: '',
+    discountPercent: ''
   });
 
   const getStatusSelect = (event: HotelEvent) => {
@@ -98,9 +103,10 @@ export default function EventsManagementPage() {
         <button 
           onClick={() => {
             setEditingEvent(null);
-            setFormData({ title: '', shortDesc: '', type: 'Sự kiện', isScheduled: false, publishDate: '', image: '/placeholder.svg' });
+            setFormData({ title: '', shortDesc: '', type: 'Sự kiện', isScheduled: false, publishDate: '', image: '/placeholder.svg', startDate: '', endDate: '', maxPeople: '', discountPercent: '' });
             setIsAddPanelOpen(true);
             setShowError(false);
+            setFormErrors({});
           }}
           className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
         >
@@ -139,10 +145,15 @@ export default function EventsManagementPage() {
                           type: ev.type,
                           isScheduled: ev.isScheduled || false,
                           publishDate: ev.publishDate || '',
-                          image: ev.image || '/placeholder.svg'
+                          image: ev.image || '/placeholder.svg',
+                          startDate: ev.startDate || '',
+                          endDate: ev.endDate || '',
+                          maxPeople: ev.maxPeople?.toString() || '',
+                          discountPercent: ev.discountPercent?.toString() || ''
                         });
                         setIsAddPanelOpen(true);
                         setShowError(false);
+                        setFormErrors({});
                       }}
                       className="px-3 py-1.5 border border-slate-200 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
                     >
@@ -172,11 +183,11 @@ export default function EventsManagementPage() {
         </table>
       </div>
 
-      {/* Slide-in Edit/Add Panel */}
+      {/* Centered Edit/Add Modal */}
       {isAddPanelOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div className="fixed inset-0 z-50 flex justify-center items-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsAddPanelOpen(false)}></div>
-          <div className="relative w-[900px] bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+          <div className="relative w-[900px] max-w-full bg-white max-h-[95vh] rounded-2xl shadow-2xl flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
             <div className="px-6 py-5 border-b border-slate-200 flex justify-between items-center bg-white shrink-0">
               <h2 className="text-xl font-bold text-slate-800">{editingEvent ? 'Sửa bài viết' : 'Soạn bài viết mới'}</h2>
               <button onClick={() => setIsAddPanelOpen(false)} className="h-8 w-8 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-500">
@@ -194,10 +205,10 @@ export default function EventsManagementPage() {
                       type="text" 
                       placeholder="Nhập tiêu đề..." 
                       value={formData.title}
-                      onChange={(e) => { setFormData({...formData, title: e.target.value}); setShowError(false); }}
-                      className={`w-full px-4 py-2.5 border ${showError && !formData.title ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all`}
+                      onChange={(e) => { setFormData({...formData, title: e.target.value}); setFormErrors({...formErrors, title: ''}); }}
+                      className={`w-full px-4 py-2.5 border ${formErrors.title ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all`}
                     />
-                    {showError && !formData.title && <p className="text-xs text-red-500 font-medium">Vui lòng nhập tiêu đề bài viết.</p>}
+                    {formErrors.title && <p className="text-xs text-red-500 font-medium">{formErrors.title}</p>}
                   </div>
                   
                   <div className="space-y-1.5">
@@ -210,10 +221,62 @@ export default function EventsManagementPage() {
                     <textarea 
                       rows={3}
                       value={formData.shortDesc}
-                      onChange={(e) => setFormData({...formData, shortDesc: e.target.value.slice(0, 150)})}
+                      onChange={(e) => { setFormData({...formData, shortDesc: e.target.value.slice(0, 150)}); setFormErrors({...formErrors, shortDesc: ''}); }}
                       placeholder="Tóm tắt nội dung chính..."
-                      className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      className={`w-full px-4 py-2.5 border ${formErrors.shortDesc ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none`}
                     />
+                    {formErrors.shortDesc && <p className="text-xs text-red-500 font-medium">{formErrors.shortDesc}</p>}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700">Thời gian bắt đầu <span className="text-red-500">*</span></label>
+                      <input 
+                        type="datetime-local" 
+                        value={formData.startDate}
+                        onChange={(e) => { setFormData({...formData, startDate: e.target.value}); setFormErrors({...formErrors, startDate: ''}); }}
+                        className={`w-full px-4 py-2 border ${formErrors.startDate ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500`}
+                      />
+                      {formErrors.startDate && <p className="text-xs text-red-500 font-medium">{formErrors.startDate}</p>}
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700">Thời gian kết thúc <span className="text-red-500">*</span></label>
+                      <input 
+                        type="datetime-local" 
+                        value={formData.endDate}
+                        onChange={(e) => { setFormData({...formData, endDate: e.target.value}); setFormErrors({...formErrors, endDate: ''}); }}
+                        className={`w-full px-4 py-2 border ${formErrors.endDate ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500`}
+                      />
+                      {formErrors.endDate && <p className="text-xs text-red-500 font-medium">{formErrors.endDate}</p>}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold text-slate-700">Sức chứa tối đa (người) <span className="text-red-500">*</span></label>
+                      <input 
+                        type="number"
+                        min="1"
+                        value={formData.maxPeople}
+                        onChange={(e) => { setFormData({...formData, maxPeople: e.target.value}); setFormErrors({...formErrors, maxPeople: ''}); }}
+                        className={`w-full px-4 py-2 border ${formErrors.maxPeople ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500`}
+                      />
+                      {formErrors.maxPeople && <p className="text-xs text-red-500 font-medium">{formErrors.maxPeople}</p>}
+                    </div>
+                    {formData.type === 'Ưu đãi' && (
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-slate-700">Ưu đãi (%) <span className="text-red-500">*</span></label>
+                        <input 
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={formData.discountPercent}
+                          onChange={(e) => { setFormData({...formData, discountPercent: e.target.value}); setFormErrors({...formErrors, discountPercent: ''}); }}
+                          className={`w-full px-4 py-2 border ${formErrors.discountPercent ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500`}
+                        />
+                        {formErrors.discountPercent && <p className="text-xs text-red-500 font-medium">{formErrors.discountPercent}</p>}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
@@ -278,9 +341,10 @@ export default function EventsManagementPage() {
                         <input 
                           type="datetime-local" 
                           value={formData.publishDate}
-                          onChange={(e) => setFormData({...formData, publishDate: e.target.value})}
-                          className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                          onChange={(e) => { setFormData({...formData, publishDate: e.target.value}); setFormErrors({...formErrors, publishDate: ''}); }}
+                          className={`w-full pl-9 pr-3 py-2 border ${formErrors.publishDate ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500`}
                         />
+                        {formErrors.publishDate && <p className="text-xs text-red-500 font-medium mt-1">{formErrors.publishDate}</p>}
                       </div>
                     )}
                   </div>
@@ -299,10 +363,31 @@ export default function EventsManagementPage() {
               <button 
                 disabled={isSaving || fileError}
                 onClick={() => {
-                  if (!formData.title.trim() || fileError) {
-                    setShowError(true);
+                  let errors: { [key: string]: string } = {};
+                  if (!formData.title.trim()) errors.title = "Vui lòng nhập tiêu đề bài viết.";
+                  if (!formData.shortDesc.trim()) errors.shortDesc = "Vui lòng nhập mô tả ngắn.";
+                  if (formData.isScheduled && !formData.publishDate) errors.publishDate = "Vui lòng chọn thời gian lên lịch xuất bản.";
+                  if (!formData.startDate) errors.startDate = "Vui lòng nhập thời gian bắt đầu.";
+                  if (!formData.endDate) errors.endDate = "Vui lòng nhập thời gian kết thúc.";
+                  else if (formData.startDate && new Date(formData.startDate) >= new Date(formData.endDate)) errors.endDate = "Thời gian kết thúc phải lớn hơn thời gian bắt đầu.";
+                  
+                  if (!formData.maxPeople || isNaN(Number(formData.maxPeople)) || Number(formData.maxPeople) <= 0) errors.maxPeople = "Sức chứa tối đa không hợp lệ (> 0).";
+                  
+                  if (formData.type === 'Ưu đãi') {
+                    if (!formData.discountPercent || isNaN(Number(formData.discountPercent)) || Number(formData.discountPercent) <= 0 || Number(formData.discountPercent) > 100) errors.discountPercent = "Phần trăm ưu đãi không hợp lệ (1-100).";
+                  }
+
+                  if (fileError) {
+                    setErrorToast("Vui lòng chọn ảnh hợp lệ.");
                     return;
                   }
+
+                  if (Object.keys(errors).length > 0) {
+                    setFormErrors(errors);
+                    return;
+                  }
+                  
+                  setFormErrors({});
                   setShowConfirmPopup(true);
                 }}
                 className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-sm transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -345,12 +430,16 @@ export default function EventsManagementPage() {
                         setEvents(prev => prev.map(ev => ev.id === editingEvent.id ? { 
                           ...ev, 
                           ...formData, 
+                          maxPeople: Number(formData.maxPeople),
+                          discountPercent: formData.type === 'Ưu đãi' ? Number(formData.discountPercent) : undefined,
                           status: formData.isScheduled ? EventStatus.SCHEDULED : (ev.status === EventStatus.SCHEDULED ? EventStatus.ACTIVE : ev.status) 
                         } : ev));
                       } else {
                         const newId = `EV-${(events.length + 1).toString().padStart(3, '0')}`;
                         setEvents(prev => [{ 
                           ...formData, 
+                          maxPeople: Number(formData.maxPeople),
+                          discountPercent: formData.type === 'Ưu đãi' ? Number(formData.discountPercent) : undefined,
                           id: newId, 
                           status: formData.isScheduled ? EventStatus.SCHEDULED : EventStatus.ACTIVE, 
                           views: 0,
