@@ -3,7 +3,8 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import { BookingProvider } from '@/components/booking-context'
-import { AuthProvider } from '@/app/AuthProvider'
+import { AuthProvider } from '@/components/auth-context'
+import { AuthProvider as AdminAuthProvider } from '@/app/AuthProvider'
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
 const geistMono = Geist_Mono({
@@ -13,26 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'THAD HOTEL — Đặt phòng khách sạn',
-  description:
-    'Tìm phòng khách sạn lý tưởng tại THAD HOTEL. Đặt phòng nhanh chóng, trải nghiệm nghỉ dưỡng đẳng cấp.',
-  generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
+  description: 'Tìm phòng khách sạn lý tưởng tại THAD HOTEL. Đặt phòng nhanh chóng, trải nghiệm nghỉ dưỡng đẳng cấp.',
 }
 
 export default function RootLayout({
@@ -43,9 +25,13 @@ export default function RootLayout({
   return (
     <html lang="vi" className={`${geistSans.variable} ${geistMono.variable} bg-background`} suppressHydrationWarning>
       <body className="font-sans antialiased" suppressHydrationWarning>
-        <AuthProvider>
-          <BookingProvider>{children}</BookingProvider>
-        </AuthProvider>
+        <AdminAuthProvider>
+          <AuthProvider>
+            <BookingProvider>
+              {children}
+            </BookingProvider>
+          </AuthProvider>
+        </AdminAuthProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

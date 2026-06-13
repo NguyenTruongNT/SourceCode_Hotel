@@ -24,7 +24,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    // Check local storage for existing session
     if (typeof window !== 'undefined') {
       const savedUser = localStorage.getItem('hotel_auth_user');
       if (savedUser) {

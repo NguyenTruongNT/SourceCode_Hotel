@@ -10,6 +10,7 @@ import { SiteFooter } from "@/components/site-footer"
 import { useBooking } from "@/components/booking-context"
 import { rooms, formatVND, type Room } from "@/lib/rooms"
 
+// Sử dụng các màu chủ đạo đồng bộ
 const badgeTone: Record<string, string> = {
   popular: "bg-primary text-primary-foreground",
   discount: "bg-emerald-600 text-white",
@@ -49,33 +50,47 @@ export default function SearchPage() {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
         >
           <ArrowLeft className="size-4" /> Quay lại tìm kiếm
         </Link>
 
-        {/* Status Bar Badge */}
-        <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-1.5 text-sm font-medium text-slate-700 shadow-sm border border-slate-200">
-          <span className="flex items-center gap-1.5">
-            <Calendar className="size-4 text-blue-600" />
-            {formatDate(search.checkIn)} – {formatDate(search.checkOut)}
-          </span>
-          <span className="text-slate-300">|</span>
-          <span className="flex items-center gap-1.5">
-            <Users className="size-4 text-blue-600" />
-            {search.guests} khách
-          </span>
+        {/* Status Bar Đồng bộ màu Primary */}
+        <div className="mt-6 flex flex-wrap items-center gap-4 rounded-xl border border-primary/10 bg-primary/5 p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-full bg-white border border-primary/20 text-primary">
+              <Calendar className="size-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Thời gian lưu trú</p>
+              <p className="text-sm font-semibold text-foreground">
+                {formatDate(search.checkIn)} – {formatDate(search.checkOut)}
+              </p>
+            </div>
+          </div>
+
+          <div className="hidden h-8 w-px bg-primary/20 sm:block" />
+
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-full bg-white border border-primary/20 text-primary">
+              <Users className="size-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Số khách</p>
+              <p className="text-sm font-semibold text-foreground">{search.guests} người lớn</p>
+            </div>
+          </div>
         </div>
 
         {/* Toolbar */}
-        <div className="mt-6 flex items-center justify-between">
-          <p className="text-sm font-medium text-foreground">{rooms.length} phòng khả dụng</p>
+        <div className="mt-8 flex items-center justify-between">
+          <p className="text-sm font-medium text-foreground">{sorted.length} phòng khả dụng</p>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             SẮP XẾP:
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value)}
-              className="rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-ring"
+              className="rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary transition-colors"
             >
               <option value="popular">Phổ biến nhất</option>
               <option value="low">Giá thấp đến cao</option>
@@ -84,23 +99,21 @@ export default function SearchPage() {
           </label>
         </div>
 
-        {/* Room grid or Empty State */}
+        {/* Room grid */}
         {sorted.length > 0 ? (
           <div className="mt-5 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {sorted.map((room) => (
-              <article key={room.id} className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
+              <article key={room.id} className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-primary/50">
                 <div className="relative h-44">
                   <Image src={room.image || "/placeholder.svg"} alt={room.name} fill className="object-cover" />
                   {room.badge && (
-                    <span
-                      className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-xs font-semibold ${badgeTone[room.badge.tone]}`}
-                    >
+                    <span className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-xs font-semibold ${badgeTone[room.badge.tone]}`}>
                       {room.badge.label}
                     </span>
                   )}
                 </div>
                 <div className="flex flex-1 flex-col p-4">
-                  <h3 className="font-semibold text-foreground">{room.name}</h3>
+                  <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">{room.name}</h3>
                   <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Maximize className="size-3.5" /> {room.size}
@@ -112,10 +125,7 @@ export default function SearchPage() {
                   <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{room.description}</p>
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {room.amenities.map((a) => (
-                      <span
-                        key={a}
-                        className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground"
-                      >
+                      <span key={a} className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
                         {a}
                       </span>
                     ))}
@@ -127,7 +137,7 @@ export default function SearchPage() {
                     </p>
                     <button
                       onClick={() => handleSelect(room)}
-                      className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                      className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90"
                     >
                       Chọn phòng
                     </button>
@@ -142,18 +152,6 @@ export default function SearchPage() {
               <Search className="size-8 text-slate-400" />
             </div>
             <h2 className="text-xl font-bold text-slate-800">Rất tiếc, đã hết phòng trống!</h2>
-            <p className="mt-2 max-w-md text-sm text-slate-600">
-              Không có phòng nào khớp với yêu cầu tìm kiếm của bạn. Hãy thử thay đổi ngày nhận/trả phòng hoặc nới lỏng bộ lọc.
-            </p>
-            <div className="mt-6 flex gap-4">
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-left shadow-sm">
-                <p className="text-xs font-semibold text-blue-600 uppercase">Gợi ý ngày thay thế</p>
-                <p className="mt-1 text-sm font-medium text-slate-800">01/06/2026 - 02/06/2026</p>
-                <Link href="/" className="mt-2 inline-block text-sm font-semibold text-blue-600 hover:underline">
-                  Tìm kiếm lại →
-                </Link>
-              </div>
-            </div>
           </div>
         )}
       </main>

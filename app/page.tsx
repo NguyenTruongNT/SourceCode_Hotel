@@ -73,7 +73,7 @@ export default function HomePage() {
             image: ev.image || '/placeholder.svg',
             link: ev.link || `/events/${ev.id.toLowerCase()}`
           }));
-        
+
         if (activeEvents.length > 0) {
           setSlides(activeEvents);
         }
@@ -123,13 +123,13 @@ export default function HomePage() {
           </div>
 
           {/* Carousel Controls */}
-          <button 
+          <button
             onClick={() => setCurrentSlide((prev) => (prev - 1 + slides.length) % slides.length)}
             className="absolute left-4 top-1/2 -translate-y-1/2 flex size-12 items-center justify-center rounded-full bg-background/20 text-white backdrop-blur-sm hover:bg-background/40 transition-colors"
           >
             <ChevronLeft className="size-6" />
           </button>
-          <button 
+          <button
             onClick={() => setCurrentSlide((prev) => (prev + 1) % slides.length)}
             className="absolute right-4 top-1/2 -translate-y-1/2 flex size-12 items-center justify-center rounded-full bg-background/20 text-white backdrop-blur-sm hover:bg-background/40 transition-colors"
           >
@@ -139,7 +139,7 @@ export default function HomePage() {
           {/* Carousel Dots */}
           <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 gap-2">
             {slides.map((_, idx) => (
-              <button 
+              <button
                 key={idx}
                 onClick={() => setCurrentSlide(idx)}
                 className={`h-2.5 rounded-full transition-all ${currentSlide === idx ? 'w-8 bg-primary' : 'w-2.5 bg-white/50 hover:bg-white/80'}`}

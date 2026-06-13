@@ -1,61 +1,72 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useContext, useState, ReactNode } from "react"
 
-export type Search = {
+type SearchParams = {
   checkIn: string
   checkOut: string
   guests: string
   roomType: string
 }
 
-export type Customer = {
+type CustomerInfo = {
   name: string
   email: string
   phone: string
   note: string
 }
 
-type BookingState = {
-  search: Search
-  setSearch: (s: Search) => void
+type BookingContextType = {
+  // Search
+  search: SearchParams
+  setSearch: (params: SearchParams) => void
+
+  // Room selection
   selectedRoomId: string | null
   setSelectedRoomId: (id: string | null) => void
-  customer: Customer
-  setCustomer: (c: Customer) => void
-  payment: string
-  setPayment: (p: string) => void
+
+  // Customer info
+  customer: CustomerInfo
+  setCustomer: (info: CustomerInfo) => void
+
+  // Payment
+  payment: string | null
+  setPayment: (method: string | null) => void
+
+  // Discount
   discount: number
+  setDiscount: (value: number) => void
   discountCode: string
-  setDiscount: (amount: number, code: string) => void
-  bookingCode: string
-  setBookingCode: (c: string) => void
+  setDiscountCode: (code: string) => void
+
+  // Booking result
+  bookingCode: string | null
+  setBookingCode: (code: string | null) => void
 }
 
-const defaultSearch: Search = {
-  checkIn: "2026-06-06",
-  checkOut: "2026-06-07",
-  guests: "2",
-  roomType: "all",
-}
-
-const defaultCustomer: Customer = { name: "", email: "", phone: "", note: "" }
-
-const BookingContext = createContext<BookingState | null>(null)
+const BookingContext = createContext<BookingContextType | undefined>(undefined)
 
 export function BookingProvider({ children }: { children: ReactNode }) {
-  const [search, setSearch] = useState<Search>(defaultSearch)
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null)
-  const [customer, setCustomer] = useState<Customer>(defaultCustomer)
-  const [payment, setPayment] = useState("card")
-  const [discount, setDiscountAmount] = useState(0)
-  const [discountCode, setDiscountCode] = useState("")
-  const [bookingCode, setBookingCode] = useState("")
+  const [search, setSearch] = useState<SearchParams>({
+    checkIn: "",
+    checkOut: "",
+    guests: "2",
+    roomType: "all",
+  })
 
-  const setDiscount = (amount: number, code: string) => {
-    setDiscountAmount(amount)
-    setDiscountCode(code)
-  }
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null)
+
+  const [customer, setCustomer] = useState<CustomerInfo>({
+    name: "",
+    email: "",
+    phone: "",
+    note: "",
+  })
+
+  const [payment, setPayment] = useState<string | null>(null)
+  const [discount, setDiscount] = useState<number>(0)
+  const [discountCode, setDiscountCode] = useState<string>("")
+  const [bookingCode, setBookingCode] = useState<string | null>(null)
 
   return (
     <BookingContext.Provider
@@ -69,8 +80,9 @@ export function BookingProvider({ children }: { children: ReactNode }) {
         payment,
         setPayment,
         discount,
-        discountCode,
         setDiscount,
+        discountCode,
+        setDiscountCode,
         bookingCode,
         setBookingCode,
       }}
@@ -81,7 +93,9 @@ export function BookingProvider({ children }: { children: ReactNode }) {
 }
 
 export function useBooking() {
-  const ctx = useContext(BookingContext)
-  if (!ctx) throw new Error("useBooking must be used within BookingProvider")
-  return ctx
+  const context = useContext(BookingContext)
+  if (context === undefined) {
+    throw new Error("useBooking must be used within a BookingProvider")
+  }
+  return context
 }
