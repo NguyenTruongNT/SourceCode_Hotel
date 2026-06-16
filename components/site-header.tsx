@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useAuth } from "@/components/auth-context"
 import { User, LogOut, LogIn } from "lucide-react"
-
+import Image from "next/image";
 const nav = [
   { label: "Trang chủ", href: "/" },
   { label: "Phòng nghỉ", href: "/search" },
@@ -23,11 +23,15 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-            T
-          </span>
-          <span className="text-lg font-semibold tracking-tight text-foreground">THAD HOTEL</span>
+        <Link href="/" className="flex items-center">
+          <Image
+            src="/images/logo.png"
+            alt="Thad Hotel Logo"
+            width={140}
+            height={40}
+            className="object-contain"
+            priority
+          />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">

@@ -5,7 +5,7 @@ import { useAuth } from '@/app/AuthProvider';  // Sửa lại import
 import { useAuth as useCustomerAuth } from '@/components/auth-context';  // Đổi tên để tránh conflict
 import { Lock, User, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-
+import Image from "next/image"
 export default function LoginPage() {
   const router = useRouter();
   const { login: adminLogin, currentUser, isLoading: adminLoading } = useAuth();
@@ -76,10 +76,16 @@ export default function LoginPage() {
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"></div>
 
       <div className={`relative z-10 w-full max-w-md bg-white/10 backdrop-blur-md p-8 rounded-2xl shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-500 ${shake ? 'animate-[shake_0.5s_ease-in-out]' : ''}`}>
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold tracking-wide text-white mb-2">
-            THAD<span className="font-light text-blue-400">HOTEL</span>
-          </h1>
+        <div className="text-center mb-8 flex flex-col items-center">
+          <Image
+            src="/images/logo-white.png"
+            alt="Thad Hotel Logo"
+            width={200}
+            height={56}
+            style={{ width: 'auto', height: '56px' }}
+            className="object-contain mb-3"
+            priority
+          />
           <p className="text-slate-300 text-sm">Hệ thống Quản lý & Đặt phòng Khách sạn</p>
         </div>
 
