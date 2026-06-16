@@ -232,9 +232,8 @@ export default function PaymentPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div className="relative z-10 mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
-            <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-amber-100">
-              <svg
-                className="size-6 text-amber-500"
+            <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-red-100">
+              <svg className="size-6 text-red-500"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"

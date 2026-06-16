@@ -158,7 +158,7 @@ export default function BookingPage() {
 
         </div>
 
-        <h1 className="mt-6 text-3xl font-bold text-slate-900">Thông tin đặt phòng</h1>
+
 
         {/* Thông báo đã đăng nhập - Màu xanh dương */}
         {isLoggedIn && (
@@ -169,9 +169,9 @@ export default function BookingPage() {
         )}
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[380px_1fr] items-start">
-          {/* Cột trái: Chi tiết đơn hàng */}
-          <aside className="h-fit rounded-xl bg-slate-50 border border-slate-200 p-6">
-            <h2 className="font-bold text-lg mb-5">Chi tiết đơn hàng</h2>
+          {/* Cột trái: Thông tin đặt phòng */}
+          <aside className="h-fit rounded-xl bg-white border border-slate-200 p-6 shadow-sm">
+            <h2 className="font-bold text-lg mb-5">Thông tin đặt phòng</h2>
             <div className="relative h-44 w-full mb-4 overflow-hidden rounded-lg">
               <Image src={room.image || "/placeholder.svg"} alt={room.name} fill className="object-cover" />
             </div>

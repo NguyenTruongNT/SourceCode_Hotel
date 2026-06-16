@@ -33,7 +33,7 @@ export function OrderSummary({
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-semibold text-slate-900">Chi tiết đơn hàng</h2>
+      <h2 className="text-base font-semibold text-slate-900">Chi tiết đơn đặt phòng</h2>
 
       <div className="mt-4 space-y-3 text-sm">
         <div>
