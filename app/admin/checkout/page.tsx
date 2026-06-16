@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Search, Filter, Printer, CreditCard, Banknote, Edit3, CheckCircle2, X, AlertCircle } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Search, Filter, Printer, CreditCard, Banknote, Edit3, CheckCircle2, X, AlertCircle, Trash2, Mail, RefreshCw, WifiOff, Loader2 } from 'lucide-react';
 import { useAdmin } from '@/app/admin/AdminProvider';
 import { RoomStatus } from '@/app/admin/types';
 import Image from 'next/image';
@@ -15,8 +15,57 @@ export default function CheckoutPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showPrintInvoice, setShowPrintInvoice] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('card');
+
+  // State cho phí phát sinh
   const [feeName, setFeeName] = useState('');
   const [feeAmount, setFeeAmount] = useState('');
+  const [feeAmountError, setFeeAmountError] = useState('');
+  const [feeNameError, setFeeNameError] = useState('');
+  const [isFeeAmountTouched, setIsFeeAmountTouched] = useState(false);
+  const [isFeeNameTouched, setIsFeeNameTouched] = useState(false);
+
+  // State cho danh sách phí phát sinh đã thêm
+  const [extraFees, setExtraFees] = useState<Array<{ id: string, name: string, amount: number }>>([]);
+
+  // State cho luồng ngoại lệ
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [showPrinterErrorPopup, setShowPrinterErrorPopup] = useState(false); // Popup lỗi máy in
+  const [showNetworkErrorPopup, setShowNetworkErrorPopup] = useState(false); // Popup lỗi mạng
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [printerErrorAction, setPrinterErrorAction] = useState<'email' | 'retry' | null>(null);
+
+  // Ref cho ô input số tiền
+  const feeAmountInputRef = useRef<HTMLInputElement>(null);
+
+  // Mock function để kiểm tra máy in
+  const checkPrinterStatus = (): Promise<{ success: boolean; error?: string }> => {
+    return new Promise((resolve) => {
+      // Giả lập kiểm tra máy in - 30% khả năng lỗi
+      const random = Math.random();
+      if (random < 0.3) {
+        resolve({ success: false, error: 'Máy in đang mất kết nối mạng hoặc hết giấy' });
+      } else {
+        resolve({ success: true });
+      }
+    });
+  };
+
+  // Mock function để xử lý thanh toán
+  const processPayment = (): Promise<{ success: boolean; error?: string }> => {
+    return new Promise((resolve) => {
+      // Giả lập mất kết nối mạng - 20% khả năng lỗi
+      const random = Math.random();
+      if (random < 0.2) {
+        setTimeout(() => {
+          resolve({ success: false, error: 'Không thể kết nối đến máy chủ' });
+        }, 3000);
+      } else {
+        setTimeout(() => {
+          resolve({ success: true });
+        }, 1500);
+      }
+    });
+  };
 
   const occupiedRooms = rooms
     .filter(r => r.status === RoomStatus.OCCUPIED && r.currentBookingId)
@@ -51,10 +100,161 @@ export default function CheckoutPage() {
     setShowFeeForm(false);
     setShowInvoice(false);
     setCheckoutComplete(false);
+    setShowPrinterErrorPopup(false);
+    setShowNetworkErrorPopup(false);
+    setPaymentSuccess(false);
+    setPrinterErrorAction(null);
+    setIsProcessingPayment(false);
+    // Reset form phí phát sinh
+    setFeeName('');
+    setFeeAmount('');
+    setFeeAmountError('');
+    setFeeNameError('');
+    setIsFeeAmountTouched(false);
+    setIsFeeNameTouched(false);
+    setExtraFees([]);
   };
 
-  const handleCompletePayment = () => {
-    if (selectedRoom) {
+  // Xử lý nhập phí phát sinh
+  const handleFeeAmountKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const key = e.key;
+    const allowedNavigationKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
+
+    if (allowedNavigationKeys.includes(key)) {
+      return;
+    }
+
+    if (key === '-') {
+      e.preventDefault();
+      return;
+    }
+
+    if (!/^[0-9]$/.test(key)) {
+      e.preventDefault();
+    }
+  };
+
+  const handleFeeAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const numericValue = value.replace(/[^0-9]/g, '');
+    setFeeAmount(numericValue);
+    setIsFeeAmountTouched(true);
+
+    if (feeAmountError) {
+      setFeeAmountError('');
+    }
+  };
+
+  const handleFeeAmountBlur = () => {
+    setIsFeeAmountTouched(true);
+    validateFeeAmount(feeAmount);
+  };
+
+  const validateFeeAmount = (amount: string) => {
+    if (!amount || amount === '') {
+      setFeeAmountError('Vui lòng nhập số tiền phát sinh');
+      return false;
+    }
+
+    const numAmount = Number(amount);
+    if (numAmount <= 0) {
+      setFeeAmountError('Phí phát sinh phải lớn hơn 0');
+      return false;
+    }
+
+    setFeeAmountError('');
+    return true;
+  };
+
+  const validateFeeName = (name: string) => {
+    if (!name.trim()) {
+      setFeeNameError('Vui lòng nhập tên dịch vụ');
+      return false;
+    }
+    setFeeNameError('');
+    return true;
+  };
+
+  const handleFeeNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setFeeName(value);
+    setIsFeeNameTouched(true);
+
+    if (feeNameError) {
+      setFeeNameError('');
+    }
+  };
+
+  const handleFeeNameBlur = () => {
+    setIsFeeNameTouched(true);
+    validateFeeName(feeName);
+  };
+
+  const handleAddFee = () => {
+    const isAmountValid = validateFeeAmount(feeAmount);
+    const isNameValid = validateFeeName(feeName);
+
+    if (!isAmountValid) {
+      setIsFeeAmountTouched(true);
+      if (feeAmountInputRef.current) {
+        feeAmountInputRef.current.focus();
+      }
+      return;
+    }
+
+    if (!isNameValid) {
+      setIsFeeNameTouched(true);
+      return;
+    }
+
+    const newFee = {
+      id: `fee-${Date.now()}-${Math.random()}`,
+      name: feeName.trim(),
+      amount: Number(feeAmount)
+    };
+    setExtraFees([...extraFees, newFee]);
+
+    setFeeName('');
+    setFeeAmount('');
+    setFeeAmountError('');
+    setFeeNameError('');
+    setIsFeeAmountTouched(false);
+    setIsFeeNameTouched(false);
+    setShowFeeForm(false);
+  };
+
+  const handleRemoveFee = (feeId: string) => {
+    setExtraFees(extraFees.filter(fee => fee.id !== feeId));
+  };
+
+  const handleCancelFeeForm = () => {
+    setFeeName('');
+    setFeeAmount('');
+    setFeeAmountError('');
+    setFeeNameError('');
+    setIsFeeAmountTouched(false);
+    setIsFeeNameTouched(false);
+    setShowFeeForm(false);
+  };
+
+  // Luồng ngoại lệ 2 & 3: Xử lý thanh toán
+  const handleCompletePayment = async () => {
+    setIsProcessingPayment(true);
+    setShowNetworkErrorPopup(false);
+    setShowPrinterErrorPopup(false);
+
+    try {
+      // Bước 1: Xử lý thanh toán (có thể bị lỗi mạng)
+      const paymentResult = await processPayment();
+
+      if (!paymentResult.success) {
+        // Luồng ngoại lệ 3 - Mất kết nối mạng - Mở POPUP riêng
+        setIsProcessingPayment(false);
+        setShowNetworkErrorPopup(true);
+        return;
+      }
+
+      // Bước 2: Cập nhật trạng thái phòng và booking
       setRooms(prev => prev.map(r =>
         r.id === selectedRoom.id
           ? { ...r, status: RoomStatus.CLEANING, currentBookingId: undefined }
@@ -63,15 +263,71 @@ export default function CheckoutPage() {
       setBookings(prev => prev.map(b =>
         b.id === selectedRoom.bookingId ? { ...b, roomNumber: undefined } : b
       ));
+
+      setPaymentSuccess(true);
+      setCheckoutComplete(true);
+      setIsProcessingPayment(false);
+
+      // Bước 3: Kiểm tra máy in trước khi in - Mở POPUP riêng nếu lỗi
+      const printerStatus = await checkPrinterStatus();
+
+      if (!printerStatus.success) {
+        // Luồng ngoại lệ 2 - Lỗi máy in - Mở POPUP riêng
+        setShowPrinterErrorPopup(true);
+        return;
+      }
+
+      // In thành công - hiển thị success bình thường
+
+    } catch (error) {
+      setIsProcessingPayment(false);
+      setShowNetworkErrorPopup(true);
     }
-    setCheckoutComplete(true);
   };
 
+  // Xử lý gửi email từ lỗi máy in
+  const handleSendEmail = () => {
+    setPrinterErrorAction('email');
+    // Giả lập gửi email
+    setTimeout(() => {
+      alert('📧 Đã gửi hóa đơn qua email cho khách hàng!');
+      setShowPrinterErrorPopup(false);
+      setPrinterErrorAction(null);
+    }, 1000);
+  };
+
+  // Xử lý thử in lại
+  const handleRetryPrint = async () => {
+    setPrinterErrorAction('retry');
+    const printerStatus = await checkPrinterStatus();
+
+    setTimeout(() => {
+      if (printerStatus.success) {
+        alert('🖨️ In hóa đơn thành công!');
+        setShowPrinterErrorPopup(false);
+      } else {
+        alert('❌ Máy in vẫn đang gặp sự cố. Vui lòng kiểm tra lại kết nối và giấy in.');
+      }
+      setPrinterErrorAction(null);
+    }, 1000);
+  };
+
+  // Tính tổng tiền bao gồm cả phí phát sinh
+  const totalExtraFees = extraFees.reduce((sum, fee) => sum + fee.amount, 0);
+  const baseTotal = selectedRoom ? (selectedRoom.price * selectedRoom.days) : 0;
+  const serviceFees = 490000;
+  const lateFee = 300000;
+  const deposit = 1000000;
   const totalAmount = selectedRoom
-    ? (selectedRoom.price * selectedRoom.days) + 490000 - 1000000
+    ? baseTotal + serviceFees + lateFee + totalExtraFees - deposit
     : 0;
 
-  // Mở popup in riêng — chỉ gọi khi nhấn nút "In hóa đơn"
+  const isPaymentDisabled = () => {
+    return (feeAmountError && isFeeAmountTouched && showFeeForm) ||
+      (feeNameError && isFeeNameTouched && showFeeForm) ||
+      isProcessingPayment;
+  };
+
   const handlePrint = () => {
     const el = document.getElementById('invoice-print');
     if (!el) return;
@@ -212,7 +468,7 @@ export default function CheckoutPage() {
       )}
 
       {/* Checkout Modal */}
-      {selectedRoom && !checkoutComplete && (
+      {selectedRoom && !checkoutComplete && !showPrinterErrorPopup && !showNetworkErrorPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setSelectedRoom(null)} />
 
@@ -268,7 +524,13 @@ export default function CheckoutPage() {
                       <h4 className="font-bold text-slate-800 text-sm uppercase tracking-wide">Dịch vụ & Phụ phí</h4>
                       {!showFeeForm && (
                         <button
-                          onClick={() => setShowFeeForm(true)}
+                          onClick={() => {
+                            setShowFeeForm(true);
+                            setFeeAmountError('');
+                            setFeeNameError('');
+                            setIsFeeAmountTouched(false);
+                            setIsFeeNameTouched(false);
+                          }}
                           className="text-blue-600 hover:text-blue-700 text-sm font-semibold flex items-center gap-1"
                         >
                           <Edit3 className="h-3.5 w-3.5" /> Thêm phí
@@ -288,30 +550,80 @@ export default function CheckoutPage() {
                         <span className="text-rose-600 font-medium">Phụ thu trả phòng trễ</span>
                         <span className="font-bold text-rose-600">300.000đ</span>
                       </div>
+
+                      {/* Hiển thị phí phát sinh đã thêm với nút xóa */}
+                      {extraFees.map((fee) => (
+                        <div key={fee.id} className="flex justify-between items-center border-t border-slate-100 pt-2">
+                          <span className="text-slate-600">{fee.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-slate-800">{fee.amount.toLocaleString('vi-VN')}đ</span>
+                            <button
+                              onClick={() => handleRemoveFee(fee.id)}
+                              className="text-red-400 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-red-50"
+                              title="Xóa phí này"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
 
+                    {/* Form thêm phí phát sinh */}
                     {showFeeForm && (
                       <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mt-4 animate-in slide-in-from-top-2">
                         <p className="text-sm font-semibold text-slate-700 mb-3">Thêm khoản phí mới</p>
                         <div className="grid grid-cols-2 gap-3 mb-3">
-                          <input
-                            type="text"
-                            placeholder="Tên dịch vụ / phí..."
-                            value={feeName}
-                            onChange={e => setFeeName(e.target.value)}
-                            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Số tiền (đ)..."
-                            value={feeAmount}
-                            onChange={e => setFeeAmount(e.target.value.replace(/[^0-9]/g, ''))}
-                            className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                          />
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="Tên dịch vụ / phí..."
+                              value={feeName}
+                              onChange={handleFeeNameChange}
+                              onBlur={handleFeeNameBlur}
+                              className={`w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors ${feeNameError && isFeeNameTouched ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'
+                                }`}
+                            />
+                            {feeNameError && isFeeNameTouched && (
+                              <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                                <AlertCircle className="h-3 w-3" />
+                                {feeNameError}
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <input
+                              ref={feeAmountInputRef}
+                              type="text"
+                              placeholder="Số tiền (đ)..."
+                              value={feeAmount}
+                              onChange={handleFeeAmountChange}
+                              onKeyPress={handleFeeAmountKeyPress}
+                              onBlur={handleFeeAmountBlur}
+                              className={`w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors ${feeAmountError && isFeeAmountTouched ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'
+                                }`}
+                            />
+                            {feeAmountError && isFeeAmountTouched && (
+                              <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                                <AlertCircle className="h-3 w-3" />
+                                {feeAmountError}
+                              </p>
+                            )}
+                          </div>
                         </div>
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => setShowFeeForm(false)} className="text-slate-500 hover:text-slate-700 text-sm font-medium px-3 py-1.5 rounded-lg">Hủy</button>
-                          <button onClick={() => setShowFeeForm(false)} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg shadow">Thêm vào hóa đơn</button>
+                          <button
+                            onClick={handleCancelFeeForm}
+                            className="text-slate-500 hover:text-slate-700 text-sm font-medium px-3 py-1.5 rounded-lg"
+                          >
+                            Hủy
+                          </button>
+                          <button
+                            onClick={handleAddFee}
+                            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg shadow transition-colors"
+                          >
+                            Thêm vào hóa đơn
+                          </button>
                         </div>
                       </div>
                     )}
@@ -330,8 +642,14 @@ export default function CheckoutPage() {
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-500">Dịch vụ & Phụ phí</span>
-                        <span className="font-semibold text-slate-800">490.000đ</span>
+                        <span className="font-semibold text-slate-800">{(serviceFees + lateFee).toLocaleString('vi-VN')}đ</span>
                       </div>
+                      {extraFees.map((fee) => (
+                        <div key={fee.id} className="flex justify-between items-center">
+                          <span className="text-slate-500">{fee.name}</span>
+                          <span className="font-semibold text-slate-800">{fee.amount.toLocaleString('vi-VN')}đ</span>
+                        </div>
+                      ))}
                       <div className="flex justify-between items-center">
                         <span className="text-emerald-600">Đã cọc trước</span>
                         <span className="font-semibold text-emerald-600">-1.000.000đ</span>
@@ -353,14 +671,18 @@ export default function CheckoutPage() {
                           <div className="grid grid-cols-2 gap-3">
                             <button
                               onClick={() => setPaymentMethod('card')}
-                              className={`flex flex-col items-center justify-center p-3 border-2 rounded-xl transition-colors text-sm ${paymentMethod === 'card' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-600'}`}
+                              disabled={isProcessingPayment}
+                              className={`flex flex-col items-center justify-center p-3 border-2 rounded-xl transition-colors text-sm ${paymentMethod === 'card' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                                } ${isProcessingPayment ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
                               <CreditCard className="h-5 w-5 mb-1" />
                               <span className="text-xs font-bold">Thẻ / CK</span>
                             </button>
                             <button
                               onClick={() => setPaymentMethod('cash')}
-                              className={`flex flex-col items-center justify-center p-3 border-2 rounded-xl transition-colors text-sm ${paymentMethod === 'cash' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-600'}`}
+                              disabled={isProcessingPayment}
+                              className={`flex flex-col items-center justify-center p-3 border-2 rounded-xl transition-colors text-sm ${paymentMethod === 'cash' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                                } ${isProcessingPayment ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
                               <Banknote className="h-5 w-5 mb-1" />
                               <span className="text-xs font-bold">Tiền mặt</span>
@@ -368,10 +690,20 @@ export default function CheckoutPage() {
                           </div>
                           <button
                             onClick={() => setShowInvoice(true)}
-                            className="w-full mt-2 bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow"
+                            disabled={isPaymentDisabled()}
+                            className={`w-full mt-2 font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow text-white ${isPaymentDisabled()
+                              ? 'bg-slate-300 cursor-not-allowed hover:bg-slate-300'
+                              : 'bg-slate-800 hover:bg-slate-900'
+                              }`}
                           >
-                            <Printer className="h-4 w-4" /> Xem trước hóa đơn
+                            <Printer className="h-4 w-4" />
+                            Xem trước hóa đơn
                           </button>
+                          {isPaymentDisabled() && (
+                            <p className="text-red-500 text-xs text-center">
+                              Vui lòng nhập đầy đủ thông tin phí phát sinh để tiếp tục
+                            </p>
+                          )}
                         </div>
                       ) : (
                         <div className="space-y-4">
@@ -379,18 +711,30 @@ export default function CheckoutPage() {
                             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                             <p>Xác nhận thanh toán để hoàn tất Check-out.</p>
                           </div>
+
                           <div className="flex gap-3">
                             <button
                               onClick={() => setShowInvoice(false)}
+                              disabled={isProcessingPayment}
                               className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 font-semibold rounded-xl hover:bg-slate-200 transition-colors text-sm"
                             >
                               Quay lại
                             </button>
                             <button
                               onClick={handleCompletePayment}
-                              className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-sm transition-colors text-sm flex items-center justify-center gap-2"
+                              disabled={isProcessingPayment}
+                              className={`flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-sm transition-colors text-sm flex items-center justify-center gap-2 ${isProcessingPayment ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
-                              <CheckCircle2 className="h-4 w-4" /> Hoàn tất
+                              {isProcessingPayment ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Đang xử lý...
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle2 className="h-4 w-4" /> Hoàn tất
+                                </>
+                              )}
                             </button>
                           </div>
                         </div>
@@ -405,8 +749,134 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* Success Modal */}
-      {checkoutComplete && (
+      {/* POPUP: Lỗi máy in - Luồng ngoại lệ 2 */}
+      {showPrinterErrorPopup && selectedRoom && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowPrinterErrorPopup(false)} />
+
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setShowPrinterErrorPopup(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:bg-slate-100 p-1.5 rounded-full transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex flex-col items-center">
+              <div className="w-20 h-20 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mb-5">
+                <AlertCircle className="h-10 w-10" />
+              </div>
+
+              <h3 className="text-xl font-bold text-slate-800 mb-2 text-center">Lỗi máy in</h3>
+              <p className="text-slate-500 text-center text-sm mb-6">
+                Phòng <span className="font-semibold text-slate-700">{selectedRoom.id}</span> đã check-out thành công.<br />
+                Tuy nhiên máy in đang gặp sự cố (mất kết nối mạng hoặc hết giấy).
+              </p>
+
+              <div className="w-full bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+                <p className="text-xs text-amber-700 text-center">
+                  ⚠️ Hóa đơn chưa được in. Vui lòng chọn một trong các tùy chọn bên dưới.
+                </p>
+              </div>
+
+              <div className="flex gap-3 w-full">
+                <button
+                  onClick={handleSendEmail}
+                  disabled={printerErrorAction === 'email'}
+                  className="flex-1 px-4 py-3 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {printerErrorAction === 'email' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mail className="h-4 w-4" />
+                  )}
+                  Gửi Email
+                </button>
+                <button
+                  onClick={handleRetryPrint}
+                  disabled={printerErrorAction === 'retry'}
+                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {printerErrorAction === 'retry' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  Thử in lại
+                </button>
+              </div>
+
+              <button
+                onClick={() => setShowPrinterErrorPopup(false)}
+                className="mt-4 text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP: Lỗi mạng - Luồng ngoại lệ 3 */}
+      {showNetworkErrorPopup && selectedRoom && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowNetworkErrorPopup(false)} />
+
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setShowNetworkErrorPopup(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:bg-slate-100 p-1.5 rounded-full transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex flex-col items-center">
+              <div className="w-20 h-20 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-5">
+                <WifiOff className="h-10 w-10" />
+              </div>
+
+              <h3 className="text-xl font-bold text-slate-800 mb-2 text-center">Mất kết nối mạng</h3>
+              <p className="text-slate-500 text-center text-sm mb-4">
+                Không thể kết nối đến máy chủ. Giao dịch chưa được ghi nhận.
+              </p>
+
+              <div className="w-full bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p className="text-xs text-red-700 text-center">
+                  ⚠️ Vui lòng kiểm tra lại đường truyền mạng và thử lại.<br />
+                  Mọi dữ liệu đã nhập vẫn được giữ nguyên.
+                </p>
+              </div>
+
+              <div className="flex gap-3 w-full">
+                <button
+                  onClick={() => {
+                    setShowNetworkErrorPopup(false);
+                    // Mở lại modal checkout với dữ liệu cũ
+                    setShowInvoice(true);
+                  }}
+                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition-colors"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Thử lại
+                </button>
+                <button
+                  onClick={() => {
+                    setShowNetworkErrorPopup(false);
+                    setSelectedRoom(null);
+                    setShowInvoice(false);
+                  }}
+                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition-colors"
+                >
+                  Hủy
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Modal (In thành công) */}
+      {checkoutComplete && !showPrinterErrorPopup && !showNetworkErrorPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white p-8 rounded-2xl flex flex-col items-center animate-in zoom-in-95 duration-300 shadow-2xl max-w-sm w-full mx-4">
             <div className="w-20 h-20 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-5">
@@ -415,11 +885,15 @@ export default function CheckoutPage() {
             <h3 className="text-xl font-bold text-slate-800 mb-2">Check-out thành công!</h3>
             <p className="text-slate-500 text-center text-sm mb-6">
               Phòng <span className="font-semibold text-slate-700">{selectedRoom?.id}</span> đã chuyển sang chờ dọn dẹp.<br />
-              Hóa đơn đã gửi qua email cho khách.
+              Hóa đơn đã được in thành công.
             </p>
             <div className="flex gap-3 w-full">
               <button
-                onClick={() => { setCheckoutComplete(false); setSelectedRoom(null); }}
+                onClick={() => {
+                  setCheckoutComplete(false);
+                  setSelectedRoom(null);
+                  setPaymentSuccess(false);
+                }}
                 className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm"
               >
                 Đóng
@@ -435,15 +909,13 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* Printable Invoice — xem bản in, giữ nguyên logic gốc */}
+      {/* Printable Invoice */}
       {showPrintInvoice && selectedRoom && (
         <div className="fixed inset-0 z-[100] bg-slate-100 overflow-y-auto p-8">
-          {/* id="invoice-print" bọc đúng nội dung cần in */}
           <div
             id="invoice-print"
             className="max-w-3xl mx-auto bg-white shadow-2xl border border-slate-200 p-10 rounded-xl relative"
           >
-
             <button
               onClick={() => setShowPrintInvoice(false)}
               className="absolute top-4 right-4 text-slate-400 hover:bg-slate-100 p-2 rounded-full"
@@ -522,6 +994,14 @@ export default function CheckoutPage() {
                   <td className="py-4 px-4 text-center">1</td>
                   <td className="py-4 px-4 text-right font-bold text-rose-600">300.000đ</td>
                 </tr>
+                {extraFees.map((fee) => (
+                  <tr key={fee.id}>
+                    <td className="py-4 px-4">{fee.name}</td>
+                    <td className="py-4 px-4 text-center">{fee.amount.toLocaleString('vi-VN')}đ</td>
+                    <td className="py-4 px-4 text-center">1</td>
+                    <td className="py-4 px-4 text-right font-medium text-slate-800">{fee.amount.toLocaleString('vi-VN')}đ</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
 
@@ -530,7 +1010,7 @@ export default function CheckoutPage() {
               <div className="w-72 space-y-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Cộng tiền dịch vụ</span>
-                  <span className="font-semibold text-slate-800">{((selectedRoom.price * selectedRoom.days) + 490000).toLocaleString('vi-VN')}đ</span>
+                  <span className="font-semibold text-slate-800">{((selectedRoom.price * selectedRoom.days) + serviceFees + lateFee + totalExtraFees).toLocaleString('vi-VN')}đ</span>
                 </div>
                 <div className="flex justify-between text-emerald-600">
                   <span>Trừ tiền cọc (Deposit)</span>
@@ -564,7 +1044,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* Nút in — mở popup riêng thay vì window.print() trực tiếp */}
+          {/* Print Button */}
           <div className="fixed bottom-8 right-8">
             <button
               onClick={handlePrint}
