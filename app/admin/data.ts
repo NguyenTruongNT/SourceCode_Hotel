@@ -18,7 +18,7 @@ export const INITIAL_ROOMS: Room[] = [
   { id: '202', floor: 2, type: RoomType.STANDARD, status: RoomStatus.OCCUPIED, currentBookingId: 'B-001' },
   { id: '203', floor: 2, type: RoomType.STANDARD, status: RoomStatus.CLEANING },
   { id: '204', floor: 2, type: RoomType.STANDARD, status: RoomStatus.EMPTY },
-  { id: '205', floor: 2, type: RoomType.STANDARD, status: RoomStatus.BOOKED, currentBookingId: 'B-002' },
+  { id: '205', floor: 2, type: RoomType.STANDARD, status: RoomStatus.BOOKED, currentBookingId: 'THAD-20260537-W3H6I' },
   { id: '206', floor: 2, type: RoomType.STANDARD, status: RoomStatus.OCCUPIED, currentBookingId: 'B-003' },
   { id: '207', floor: 2, type: RoomType.STANDARD, status: RoomStatus.EMPTY },
   { id: '208', floor: 2, type: RoomType.STANDARD, status: RoomStatus.EMPTY },

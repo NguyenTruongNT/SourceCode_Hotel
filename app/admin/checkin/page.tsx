@@ -382,7 +382,7 @@ export default function App() {
                 onClick={() => setCleaningRoomConfirm(null)}
                 className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors flex-1"
               >
-                Hủy bỏ
+                Hủy
               </button>
               <button 
                 onClick={handleConfirmCleaning}

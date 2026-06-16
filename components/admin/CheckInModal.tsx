@@ -154,6 +154,7 @@ export default function CheckInModal({
   const handleCancelEarlyCheckIn = () => {
     setShowEarlyConfirmation(false);
   };
+  
   // Tính ngày mai với định dạng YYYY-MM-DD để khóa các ngày trong quá khứ và hôm nay
   const tomorrowObj = new Date();
   tomorrowObj.setDate(tomorrowObj.getDate() + 1);
@@ -168,7 +169,8 @@ export default function CheckInModal({
     }
     return '';
   };
-// Tính toán số ngày nhận phòng sớm và tổng phí
+  
+  // Tính toán số ngày nhận phòng sớm và tổng phí
   const originalCheckInObj = parseDate(booking?.checkInDate || currentDate);
   originalCheckInObj.setHours(0, 0, 0, 0);
   
@@ -178,26 +180,29 @@ export default function CheckInModal({
   
   const unitPrice = 500000;
   const totalEarlyCheckInFee = earlyDays * unitPrice;
+
   return (
     <div id="checkin-modal-backdrop" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 transition-all duration-300">
       
       {/* RENDER NATIVE STATE 1 (EARLY CHECK-IN CONFIRMATION MODAL) */}
       {showEarlyConfirmation ? (
         <div id="early-checkin-confirmation" className="bg-white w-full max-w-[560px] rounded-2xl shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in duration-300">
-          <div className="p-6 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+          {/* Giảm padding py */}
+          <div className="px-6 py-4 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <span className="p-1 px-1.5 bg-amber-500 rounded text-white flex items-center justify-center shrink-0">
-                <AlertTriangle className="h-6 w-6 font-bold" />
+                <AlertTriangle className="h-5 w-5 font-bold" />
               </span>
-              <h2 className="text-xl font-bold text-amber-900">Xác nhận cập nhật nhận sớm</h2>
+              <h2 className="text-lg font-bold text-amber-900">Xác nhận cập nhật nhận sớm</h2>
             </div>
             <button onClick={handleCancelEarlyCheckIn} className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-amber-100">
-              <X className="h-6 w-6" />
+              <X className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="p-6 space-y-4">
-            <div className="bg-[#FFF4E5] p-4 rounded-xl flex gap-3 border border-[#FFE0B2]">
+          {/* Giảm padding và gap */}
+          <div className="px-6 py-4 space-y-3">
+            <div className="bg-[#FFF4E5] p-3 rounded-xl flex gap-3 border border-[#FFE0B2]">
               <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
               <p className="text-sm text-amber-900">
                 Khách đang yêu cầu nhận phòng sớm hơn so với đặt chỗ ban đầu.
@@ -205,55 +210,55 @@ export default function CheckInModal({
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-              <div className="p-3.5 bg-slate-50 font-bold text-xs text-slate-500 border-b border-slate-200 uppercase tracking-wider">
+              <div className="px-4 py-2 bg-slate-50 font-bold text-xs text-slate-500 border-b border-slate-200 uppercase tracking-wider">
                 Chi tiết phát sinh
               </div>
               <div className="divide-y divide-slate-100">
-                <div className="p-4 flex justify-between items-center bg-white text-sm">
+                <div className="px-4 py-2.5 flex justify-between items-center bg-white text-sm">
                   <span className="text-slate-500">Ngày nhận ban đầu</span>
                   <span className="font-semibold text-slate-800">{booking.checkInDate}</span>
                 </div>
-                <div className="p-4 flex justify-between items-center bg-white text-sm">
+                <div className="px-4 py-2.5 flex justify-between items-center bg-white text-sm">
                   <span className="text-slate-500">Ngày nhận mới</span>
                   <span className="font-bold text-blue-600">{currentDate} (Hôm nay)</span>
                 </div>
                 
                 {/* Dòng mới bổ sung: Số ngày nhận sớm */}
-                <div className="p-4 flex justify-between items-center bg-white text-sm">
+                <div className="px-4 py-2.5 flex justify-between items-center bg-white text-sm">
                   <span className="text-slate-500">Số ngày nhận sớm</span>
                   <span className="font-semibold text-slate-800">{earlyDays} ngày</span>
                 </div>
                 
-                <div className="p-4 flex justify-between items-center bg-white text-sm">
+                <div className="px-4 py-2.5 flex justify-between items-center bg-white text-sm">
                   <span className="text-slate-500">Đơn giá/ngày</span>
                   <span className="font-semibold text-slate-800">
                     {unitPrice.toLocaleString('vi-VN')}đ
                   </span>
                 </div>
               </div>
-              <div className="p-5 bg-amber-50/50 flex justify-between items-center border-t border-amber-100">
+              <div className="px-4 py-3 bg-amber-50/50 flex justify-between items-center border-t border-amber-100">
                 <span className="text-sm font-bold text-amber-800">Tổng phí phát sinh</span>
-                {/* Hiển thị tổng tiền linh động dựa trên phép nhân */}
-                <span className="text-2xl font-black text-amber-600">
+                <span className="text-xl font-black text-amber-600">
                   {totalEarlyCheckInFee.toLocaleString('vi-VN')}đ
                 </span>
               </div>
             </div>
-            <p className="text-center text-xs text-slate-400 py-1 italic">
+            <p className="text-center text-xs text-slate-400 py-0.5 italic">
               Vui lòng xác nhận với khách hàng trước khi tiếp tục
             </p>
           </div>
 
-          <div className="p-6 flex justify-end gap-3 bg-slate-50 border-t border-slate-200">
+          {/* Giảm padding nút bấm */}
+          <div className="px-6 py-4 flex gap-3 bg-slate-50 border-t border-slate-200">
             <button
               onClick={handleCancelEarlyCheckIn}
-              className="px-6 py-2.5 rounded-lg border border-slate-300 text-slate-700 bg-white font-semibold hover:bg-slate-50 transition-colors text-sm"
+              className="flex-1 px-6 py-2 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition-colors text-sm"
             >
-              Hủy bỏ
+              Hủy
             </button>
             <button
               onClick={handleApplyEarlyCheckIn}
-              className="px-6 py-2.5 rounded-lg bg-amber-500 text-white font-semibold hover:bg-amber-600 shadow-md transition-all text-sm"
+              className="flex-1 px-6 py-2 rounded-lg bg-amber-500 text-white font-semibold hover:bg-amber-600 shadow-md transition-all text-sm"
             >
               Xác nhận cập nhật
             </button>
@@ -262,39 +267,44 @@ export default function CheckInModal({
       ) : (
         
         /* RENDER NATIVE STATE 2 (MAIN CHECK-IN FORM MODAL) */
-        <div id="checkin-modal" className="bg-white rounded-2xl shadow-2xl w-full max-w-[560px] overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-300">
+        <div id="checkin-modal" className="bg-white rounded-2xl shadow-2xl w-full max-w-[560px] overflow-hidden flex flex-col max-h-[95vh] animate-in fade-in zoom-in duration-300">
           
-          <div className="px-8 py-5 flex justify-between items-start border-b border-slate-100 shrink-0">
-            <div className="space-y-1">
-              <h3 className="text-2xl font-bold text-gray-900">Xử lý Check-in</h3>
+          {/* Giảm padding Header */}
+          <div className="px-6 py-4 flex justify-between items-start border-b border-slate-100 shrink-0">
+            <div className="space-y-0.5"> {/* Đã sửa: Giảm khoảng cách giữa 2 phần tử xuống còn 2px */}
+              <h3 className="text-lg font-bold text-gray-900 leading-none">Xử lý Check-in</h3> {/* Đã sửa: text-lg và leading-none để ép sát viền chữ */}
               {booking.isWalkIn ? (
-                <span className="inline-block px-2.5 py-0.5 bg-[#FF7A00] text-white text-[11px] font-bold rounded uppercase tracking-wide">
+                <span className="inline-block px-2 py-0.5 bg-[#FF7A00] text-white text-[10px] font-bold rounded uppercase tracking-wide">
                   {booking.id}
                 </span>
               ) : (
-                <span className="inline-block px-2.5 py-0.5 bg-blue-600 text-white text-[11px] font-bold rounded uppercase tracking-wide">
+                <span className="inline-block px-2 py-0.5 bg-blue-600 text-white text-[10px] font-bold rounded uppercase tracking-wide">
                   {booking.id}
                 </span>
               )}
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-slate-100 transition-colors">
-              <X className="h-6 w-6" />
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-slate-100 transition-colors">
+              <X className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="px-8 py-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+          {/* Giảm padding và khoảng cách các thành phần trong Body */}
+          <div className="px-6 py-4 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
 
             {isFutureCheckIn && (
-              <div id="early-checkin-alert" className="bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3 text-red-800 text-sm leading-relaxed">
-                <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div id="early-checkin-alert" className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-3 text-amber-900 text-sm leading-relaxed">
+                {/* Đổi màu icon sang amber-500 */}
+                <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="font-semibold mb-1">Cảnh báo ngày nhận phòng</p>
-                  <p className="text-xs text-red-700">
+                  {/* Đổi màu chữ mô tả sang amber-700 */}
+                  <p className="text-xs text-amber-700">
                     Ngày nhận phòng theo đặt chỗ là {booking.checkInDate}. Vui lòng cập nhật nhận sớm trước khi check-in.
                   </p>
+                  {/* Đổi nút bấm sang màu vàng/cam (bg-amber-500) đồng bộ với nút ở pop-up tiếp theo */}
                   <button
                     onClick={() => setShowEarlyConfirmation(true)}
-                    className="mt-3 bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded shadow-sm transition-colors"
+                    className="mt-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-1.5 rounded shadow-sm transition-colors"
                   >
                     Cập nhật nhận sớm
                   </button>
@@ -303,106 +313,106 @@ export default function CheckInModal({
             )}
 
             {isEarlyCheckInApplied && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 text-amber-800 text-sm leading-relaxed">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-3 text-amber-800 text-sm leading-relaxed">
                 <Info className="h-5 w-5 text-amber-500 shrink-0 mt-0.5 animate-bounce" />
                 <div className="flex-1">
                   <p className="font-semibold text-xs text-amber-900">Đã cập nhật nhận sớm thành công!</p>
                   <p className="text-xs text-amber-700">
-                    Sửa ngày nhận: {currentDate} • Đơn giá dịch vụ tăng cường: <span className="font-bold">+500.000đ</span>
+                    Sửa ngày nhận: {currentDate} • Đơn giá dịch vụ: <span className="font-bold">+500.000đ</span>
                   </p>
                 </div>
               </div>
             )}
 
-            <div className="border border-gray-200 rounded-xl p-5 space-y-4 shadow-sm bg-gradient-to-b from-white to-slate-50">
-              <p className="text-sm font-bold text-gray-800 flex items-center gap-2 border-b border-slate-100 pb-2">
-                <ClipboardList className="h-4 w-4 text-blue-600" />
-                <span>Thông tin đặt phòng</span>
-              </p>
-              
-              {booking.isWalkIn ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 bg-[#FF7A00] text-white text-[10px] font-bold rounded">WALK-IN</span>
-                    <span className="text-xs text-slate-500">Khách vãng lai trực tiếp</span>
-                  </div>
-                  {/* Bổ sung dòng ngày tháng nhận/trả phòng cho khách Walk-in */}
-                  <div className="flex items-center gap-3 text-sm text-gray-600">
-                    <Calendar className="h-4 w-4 text-gray-400" />
-                    <span>
-                      {currentDate}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 text-base">
-                    <User className="h-5 w-5 text-gray-400" />
-                    <span className="text-gray-800 font-semibold">{guestName}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-gray-600">
-                    <Calendar className="h-4 w-4 text-gray-400" />
-                    <span>
-                      {isEarlyCheckInApplied ? currentDate : booking.checkInDate} - {booking.checkOutDate}
-                    </span>
-                  </div>
-                </div>
-              )}
+            {/* Khối Thông tin đặt phòng - Giảm p-5 -> p-4 */}
+            <div className="border border-gray-200 rounded-xl p-3 space-y-2 shadow-sm bg-gradient-to-b from-white to-slate-50">
+  <p className="text-sm font-bold text-gray-800 flex items-center gap-2 border-b border-slate-100 pb-1.5">
+    <ClipboardList className="h-4 w-4 text-blue-600" />
+    <span>Thông tin đặt phòng</span>
+  </p>
+  
+  {booking.isWalkIn ? (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="px-2 py-0.5 bg-[#FF7A00] text-white text-[10px] font-bold rounded leading-none">WALK-IN</span>
+        <span className="text-xs text-slate-500 leading-none">Khách vãng lai trực tiếp</span>
+      </div>
+      <div className="flex items-center gap-2 text-sm text-gray-600">
+        <Calendar className="h-4 w-4 text-gray-400" />
+        <span className="leading-none">
+          {currentDate}
+        </span>
+      </div>
+    </div>
+  ) : (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 text-sm">
+        <User className="h-4 w-4 text-gray-400" />
+        <span className="text-gray-800 font-semibold leading-none">{guestName}</span>
+      </div>
+      <div className="flex items-center gap-2 text-sm text-gray-600">
+        <Calendar className="h-4 w-4 text-gray-400" />
+        <span className="leading-none">
+          {isEarlyCheckInApplied ? currentDate : booking.checkInDate} - {booking.checkOutDate}
+        </span>
+      </div>
+    </div>
+  )}
 
-              <div className="pt-3 border-t border-slate-200 flex justify-between text-sm">
-                <div className="flex flex-col">
-                  <span className="text-gray-400 text-xs">Loại phòng</span>
-                  <span className="font-bold text-slate-700">{booking.roomType}</span>
-                </div>
-                <div className="flex flex-col items-end">
-                  <span className="text-gray-400 text-xs">Số khách</span>
-                  <span className="font-bold text-slate-700">{booking.guestCount} người</span>
-                </div>
-              </div>
-            </div>
+  <div className="pt-2 border-t border-slate-200 flex justify-between text-sm">
+    <div className="flex flex-col space-y-0.5">
+      <span className="text-gray-400 text-[10px] leading-none">Loại phòng</span>
+      <span className="font-bold text-slate-700 leading-none">{booking.roomType}</span>
+    </div>
+    <div className="flex flex-col items-end space-y-0.5">
+      <span className="text-gray-400 text-[10px] leading-none">Số khách</span>
+      <span className="font-bold text-slate-700 leading-none">{booking.guestCount} người</span>
+    </div>
+  </div>
+</div>
 
             {booking.isWalkIn ? (
-              <div className="space-y-4" id="walk-in-customer-form">
-                <p className="text-sm font-bold text-gray-800 flex items-center gap-2 border-b border-slate-100 pb-2">
+              <div className="space-y-3" id="walk-in-customer-form">
+                <p className="text-sm font-bold text-gray-800 flex items-center gap-2 border-b border-slate-100 pb-1.5">
                   <User className="h-4 w-4 text-amber-500" />
                   <span>Thông tin khách hàng</span>
                 </p>
 
                 {/* Name */}
-                <div className="relative">
+                <div className="relative mt-2">
                   <label className={`absolute -top-2 left-3 bg-white px-2 text-[10px] font-bold ${touched.name && nameError ? 'text-red-500' : 'text-slate-500'} z-10`}>
                     Họ và tên *
                   </label>
-                  <div className={`relative flex items-center border ${touched.name && nameError ? 'border-red-500 focus-within:ring-red-500' : 'border-slate-300 focus-within:ring-amber-500'} rounded-lg px-3 py-3 bg-white transition-all`}>
+                  {/* Giảm py-3 -> py-2 */}
+                  <div className={`relative flex items-center border ${touched.name && nameError ? 'border-red-500 focus-within:ring-red-500' : 'border-slate-300 focus-within:ring-amber-500'} rounded-lg px-3 py-2 bg-white transition-all`}>
                     <User className="h-4 w-4 text-slate-400 mr-2" />
                     <input
                       className="w-full border-none p-0 text-sm focus:ring-0 outline-none text-slate-800"
                       type="text"
                       value={guestName}
-                      placeholder="Nhập họ tên khách hàng"
+                      placeholder="Nhập họ tên"
                       onBlur={() => setTouched(prev => ({ ...prev, name: true }))}
                       onChange={e => setGuestName(e.target.value)}
                     />
                   </div>
                   {touched.name && nameError && (
-                    <p className="mt-1 text-red-500 text-[10.5px] font-semibold pl-1">{nameError}</p>
+                    <p className="mt-1 text-red-500 text-[10px] font-semibold pl-1">{nameError}</p>
                   )}
                 </div>
 
                 {/* Phone */}
-                <div className="relative">
+                <div className="relative mt-2">
                   <label className={`absolute -top-2 left-3 bg-white px-2 text-[10px] font-bold ${touched.phone && phoneError ? 'text-red-500' : 'text-slate-500'} z-10`}>
                     Số điện thoại *
                   </label>
-                  <div className={`relative flex items-center border ${touched.phone && phoneError ? 'border-red-500 focus-within:ring-red-500' : 'border-slate-300 focus-within:ring-amber-500'} rounded-lg px-3 py-3 bg-white transition-all`}>
+                  <div className={`relative flex items-center border ${touched.phone && phoneError ? 'border-red-500 focus-within:ring-red-500' : 'border-slate-300 focus-within:ring-amber-500'} rounded-lg px-3 py-2 bg-white transition-all`}>
                     <Phone className="h-4 w-4 text-slate-400 mr-2" />
                     <input
                       className="w-full border-none p-0 text-sm focus:ring-0 outline-none text-slate-800"
                       type="text"
                       value={phone}
-                      placeholder="Nhập số điện thoại"
+                      placeholder="Nhập SĐT"
                       onBlur={() => setTouched(prev => ({ ...prev, phone: true }))}
-                      // Hạn chế nhập chữ, tối đa 11 số (cho đầu 84) hoặc 10 số
                       onChange={e => setPhone(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
                     />
                     {touched.phone && phoneError && (
@@ -410,14 +420,14 @@ export default function CheckInModal({
                     )}
                   </div>
                   {touched.phone && phoneError && (
-                    <p className="mt-1 text-red-500 text-[10.5px] font-semibold pl-1">{phoneError}</p>
+                    <p className="mt-1 text-red-500 text-[10px] font-semibold pl-1">{phoneError}</p>
                   )}
                 </div>
 
                 {/* Email */}
-                <div className="relative">
+                <div className="relative mt-2">
                   <label className="absolute -top-2 left-3 bg-white px-2 text-[10px] font-bold text-slate-500 z-10">Email</label>
-                  <div className="flex items-center border border-slate-300 focus-within:ring-1 focus-within:ring-amber-500 rounded-lg px-3 py-3 bg-white transition-all">
+                  <div className="flex items-center border border-slate-300 focus-within:ring-1 focus-within:ring-amber-500 rounded-lg px-3 py-2 bg-white transition-all">
                     <Mail className="h-4 w-4 text-slate-400 mr-2" />
                     <input
                       className="w-full border-none p-0 text-sm focus:ring-0 outline-none text-slate-800"
@@ -430,44 +440,54 @@ export default function CheckInModal({
                 </div>
 
                 {/* Checkout Date */}
-                <div className="relative">
-      <label className={`absolute -top-2 left-3 bg-white px-2 text-[10px] font-bold ${touched.checkOut && checkOutError ? 'text-red-500' : 'text-slate-500'} z-10`}>
-        Ngày trả phòng *
-      </label>
-      <div className={`flex items-center border ${touched.checkOut && checkOutError ? 'border-red-500 focus-within:ring-red-500' : 'border-slate-300 focus-within:ring-amber-500'} rounded-lg px-3 py-3 bg-white transition-all`}>
-        <Calendar className="h-4 w-4 text-slate-400 mr-2" />
-        <input
-          className="w-full border-none p-0 text-sm focus:ring-0 outline-none text-slate-800 bg-transparent"
-          type="date"
-          min={minDateStr} // Tự động mờ (disable) các ngày <= hôm nay
-          value={formatDateForInput(checkOutDate)}
-          onBlur={() => setTouched(prev => ({ ...prev, checkOut: true }))}
-          onChange={e => {
-            // Chuyển ngược YYYY-MM-DD (từ lịch) về lại DD/MM/YYYY (để lưu state)
-            const val = e.target.value; 
-            if (val) {
-              const [y, m, d] = val.split('-');
-              setCheckOutDate(`${d}/${m}/${y}`);
-            } else {
-              setCheckOutDate('');
-            }
-          }}
-        />
-      </div>
-      {touched.checkOut && checkOutError && (
-        <p className="mt-1 text-red-500 text-[10.5px] font-semibold pl-1">{checkOutError}</p>
-      )}
-    </div>
+                <div className="relative mt-2">
+                  <label className={`absolute -top-2 left-3 bg-white px-2 text-[10px] font-bold ${touched.checkOut && checkOutError ? 'text-red-500' : 'text-slate-500'} z-10`}>
+                    Ngày trả phòng *
+                  </label>
+                  <div className={`flex items-center border ${touched.checkOut && checkOutError ? 'border-red-500 focus-within:ring-red-500' : 'border-slate-300 focus-within:ring-amber-500'} rounded-lg px-3 py-2 bg-white transition-all`}>
+                    <Calendar className="h-4 w-4 text-slate-400 mr-2 shrink-0" />
+                    
+                    {/* CONTAINER ĐÈ ĐỊNH DẠNG NGÀY */}
+                    <div className="relative flex-1 flex items-center min-h-[20px]">
+                      {/* Thẻ hiển thị định dạng DD/MM/YYYY chuẩn, khóa sự kiện chuột bằng pointer-events-none */}
+                      <span className="absolute left-0 text-sm text-slate-800 pointer-events-none z-0">
+                        {checkOutDate || 'Chọn ngày trả phòng'}
+                      </span>
+                      
+                      {/* Input gốc làm trong suốt chữ (text-transparent), nâng z-index lên 10 để khi click vào vẫn mở lịch như bình thường */}
+                      <input
+                        className="w-full border-none p-0 text-sm focus:ring-0 outline-none text-transparent bg-transparent z-10 cursor-pointer"
+                        type="date"
+                        min={minDateStr} 
+                        value={formatDateForInput(checkOutDate)}
+                        onBlur={() => setTouched(prev => ({ ...prev, checkOut: true }))}
+                        onChange={e => {
+                          const val = e.target.value; 
+                          if (val) {
+                            const [y, m, d] = val.split('-');
+                            setCheckOutDate(`${d}/${m}/${y}`);
+                          } else {
+                            setCheckOutDate('');
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {touched.checkOut && checkOutError && (
+                    <p className="mt-1 text-red-500 text-[10px] font-semibold pl-1">{checkOutError}</p>
+                  )}
+                </div>
               </div>
             ) : null}
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               {/* CCCD Input */}
-              <div className="relative">
+              <div className="relative mt-1">
                 <label className={`absolute -top-2 left-3 bg-white px-2 text-[10px] font-bold ${touched.cccd && cccdError ? 'text-red-500' : 'text-slate-500'} z-10`}>
                   Số CCCD *
                 </label>
-                <div className={`relative flex items-center border ${touched.cccd && cccdError ? 'border-red-500 focus-within:ring-red-500' : 'border-slate-300 focus-within:ring-blue-500'} rounded-lg px-3 py-3.5 bg-white transition-all`}>
+                {/* Giảm py-3.5 -> py-2.5 */}
+                <div className={`relative flex items-center border ${touched.cccd && cccdError ? 'border-red-500 focus-within:ring-red-500' : 'border-slate-300 focus-within:ring-blue-500'} rounded-lg px-3 py-2.5 bg-white transition-all`}>
                   <CreditCard className="h-5 w-5 text-slate-400 mr-3" />
                   <input
                     className="w-full border-none p-0 text-sm focus:ring-0 outline-none text-slate-800 placeholder:text-slate-400"
@@ -475,28 +495,28 @@ export default function CheckInModal({
                     value={cccd}
                     placeholder="Nhập 12 chữ số"
                     onBlur={() => setTouched(prev => ({ ...prev, cccd: true }))}
-                    // Chặn gõ chữ, khóa cứng độ dài max 12
                     onChange={e => setCccd(e.target.value.replace(/[^0-9]/g, '').slice(0, 12))}
                   />
                   {touched.cccd && cccdError && (
-                    <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 ml-2" />
+                    <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 ml-2" />
                   )}
                 </div>
                 {touched.cccd && cccdError && (
-                  <p className="mt-1.5 text-red-500 text-[11px] font-medium leading-none pl-1">
+                  <p className="mt-1.5 text-red-500 text-[10px] font-medium leading-none pl-1">
                     {cccdError}
                   </p>
                 )}
               </div>
 
               {/* Room Assignment Dropdown */}
-              <div className="relative">
+              <div className="relative mt-2">
                 <span className="absolute -top-2 left-3 bg-white px-2 text-[10px] font-bold text-slate-500 z-10">
                   Phòng giao cho khách *
                 </span>
                 <div className="relative">
+                  {/* Giảm py-3.5 -> py-2.5 */}
                   <select
-                    className="w-full pl-4 pr-10 py-3.5 border border-slate-300 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 rounded-lg outline-none bg-white text-sm text-slate-800 transition-all font-medium"
+                    className="w-full pl-3 pr-8 py-2.5 border border-slate-300 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 rounded-lg outline-none bg-white text-sm text-slate-800 transition-all font-medium"
                     value={roomNumber}
                     onChange={e => setRoomNumber(e.target.value)}
                   >
@@ -518,9 +538,9 @@ export default function CheckInModal({
               </div>
             </div>
 
-            {/* Check-In Time Notice Banner - Cập nhật real-time */}
-            <div className="bg-[#eef8fe] border border-[#d2eefe] rounded-xl p-4 flex items-center gap-3 text-blue-700 min-h-[48px] shadow-sm">
-              <Clock className="h-5 w-5 flex-shrink-0" />
+            {/* Check-In Time Notice Banner */}
+            <div className="bg-[#eef8fe] border border-[#d2eefe] rounded-xl p-3 flex items-center gap-3 text-blue-700 min-h-[40px] shadow-sm mt-2">
+              <Clock className="h-4 w-4 flex-shrink-0" />
               <span className="text-xs font-semibold">
                 Thời gian nhận phòng ghi nhận hệ thống: {currentTime} - {currentDate}
               </span>
@@ -528,30 +548,27 @@ export default function CheckInModal({
           </div>
 
           {/* Modal Footer Buttons */}
-          <div className="p-8 pt-4 border-t border-slate-100 flex flex-col space-y-3 shrink-0 bg-slate-50">
-            {/* Thêm w-full để container dàn đều, bỏ justify-end */}
+          <div className="px-6 py-4 border-t border-slate-100 flex flex-col space-y-2 shrink-0 bg-slate-50">
             <div className="flex w-full gap-3">
               <button
                 onClick={onClose}
-                // Thêm flex-1 để chiếm 50%
-                className="flex-1 py-3 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition-colors text-sm"
+                className="flex-1 py-2.5 bg-slate-200 text-slate-700 font-semibold rounded-lg hover:bg-slate-300 transition-colors text-sm"
               >
                 Hủy
               </button>
               <button
                 disabled={isFormInvalid}
                 onClick={handleCompleteCheckIn}
-                // Thêm flex-1 để chiếm 50%, gộp chung màu xanh nước biển khi form hợp lệ
-                className={`flex-1 py-3 font-semibold rounded-lg text-sm transition-colors shadow-sm ${
+                className={`flex-1 py-2.5 font-semibold rounded-lg text-sm transition-colors shadow-sm ${
                   isFormInvalid
-                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    ? 'bg-blue-300 text-white cursor-not-allowed'
                     : 'bg-blue-500 hover:bg-blue-600 text-white'
                 }`}
               >
                 Hoàn tất Check-in
               </button>
             </div>
-            <p className="text-center text-xs text-slate-400 italic">
+            <p className="text-center text-[11px] text-slate-400 italic">
               {isFormInvalid
                 ? isFutureCheckIn
                   ? 'Vui lòng cập nhật nhận sớm trước khi check-in'
