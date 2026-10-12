@@ -50,8 +50,20 @@ next-env.d.ts
 *.suo
 *.ntvs*
 *.njsproj
-*.sln
 *.sw?
+
+# .NET artifacts
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+
+# Office temp files
+~$*
 
 # OS metadata
 Thumbs.db
