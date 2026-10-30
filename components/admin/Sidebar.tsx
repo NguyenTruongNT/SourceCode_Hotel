@@ -11,10 +11,10 @@ export default function Sidebar() {
   const { logout, currentUser } = useAuth();
 
   const allNavItems = [
-    { name: 'Bảng điều khiển & Check-in', href: '/admin/checkin', icon: Home, roles: ['admin', 'letan'] },
-    { name: 'Quản lý phòng', href: '/admin/rooms', icon: BedDouble, roles: ['admin'] },
-    { name: 'Thủ tục Check-out', href: '/admin/checkout', icon: CheckSquare, roles: ['admin', 'letan'] },
-    { name: 'Sự kiện & Ưu đãi', href: '/admin/events', icon: Gift, roles: ['admin'] },
+    { name: 'Xử lý Check-in (F3)', href: '/admin/checkin', icon: Home, roles: ['admin', 'letan'] },
+    { name: 'Xử lý Check-out (F4)', href: '/admin/checkout', icon: CheckSquare, roles: ['admin', 'letan'] },
+    { name: 'Hạng phòng & Bảng giá (F5)', href: '/admin/rooms', icon: BedDouble, roles: ['admin'] },
+    { name: 'Quản lý Voucher & Ưu đãi (F6)', href: '/admin/events', icon: Gift, roles: ['admin'] },
   ];
 
   const navItems = allNavItems.filter(item => item.roles.includes(currentUser?.username || 'admin'));
@@ -25,7 +25,7 @@ export default function Sidebar() {
         <Link href="/admin/checkin">
           <Image
             src="/images/logo-white.png"
-            alt="Thad Hotel Logo"
+            alt="HST Hotel Logo"
             width={150}
             height={36}
             style={{ width: 'auto', height: '36px' }}
@@ -43,12 +43,13 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`w-full flex items-center space-x-3 px-4 py-3.5 rounded-lg font-medium transition-all duration-200 ${isActive
-                  ? 'bg-gradient-to-r from-blue-600/20 to-transparent text-white border-l-4 border-blue-500'
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-medium text-xs transition-all duration-200 ${
+                isActive
+                  ? 'bg-gradient-to-r from-blue-600/25 to-transparent text-white border-l-4 border-blue-500 font-bold'
                   : 'text-slate-400 hover:bg-white/5 hover:text-white border-l-4 border-transparent'
-                }`}
+              }`}
             >
-              <Icon className="h-5 w-5 shrink-0" />
+              <Icon className="h-4 w-4 shrink-0" />
               <span>{item.name}</span>
             </Link>
           );
@@ -58,9 +59,9 @@ export default function Sidebar() {
       <div className="p-4 border-t border-white/5 mt-auto">
         <button
           onClick={logout}
-          className="flex items-center gap-3 text-slate-400 hover:text-white px-4 py-2 w-full transition-colors"
+          className="flex items-center gap-3 text-slate-400 hover:text-white px-4 py-2 w-full text-xs font-semibold transition-colors"
         >
-          <LogOut className="h-5 w-5" />
+          <LogOut className="h-4 w-4" />
           <span>Đăng xuất</span>
         </button>
       </div>

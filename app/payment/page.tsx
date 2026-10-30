@@ -3,37 +3,53 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, CreditCard, Wallet, Building2, Store, ShieldCheck, Clock, Tag, AlertCircle } from "lucide-react"
+import {
+  ArrowLeft,
+  CreditCard,
+  QrCode,
+  Smartphone,
+  ShieldCheck,
+  Clock,
+  Tag,
+  AlertCircle,
+  CheckCircle2,
+  Lock,
+  X
+} from "lucide-react"
 import { SiteHeader } from "@/components/site-header"
 import { SiteFooter } from "@/components/site-footer"
-import { OrderSummary, nights } from "@/components/order-summary"
 import { useBooking } from "@/components/booking-context"
 import { getRoom, formatVND } from "@/lib/rooms"
+import { Voucher, RoomType } from "@/app/admin/types"
+import { INITIAL_VOUCHERS } from "@/app/admin/data"
 
-const methods = [
-  { id: "card", label: "Thẻ tín dụng / Thẻ ghi nợ", icon: CreditCard },
-  { id: "wallet", label: "Ví điện tử (Momo, ZaloPay, VNPay)", icon: Wallet },
-  { id: "bank", label: "Chuyển khoản ngân hàng", icon: Building2 },
-  { id: "counter", label: "Thanh toán tại quầy", icon: Store },
+// 3 phương thức thanh toán cọc theo chuẩn đặc tả F2 (3.3.2)
+const paymentMethods = [
+  {
+    id: "VNPAY",
+    name: "Cổng VNPay (QR Pay)",
+    desc: "Quét mã VNPAY-QR qua ứng dụng ngân hàng hoặc ví VNPAY",
+    icon: QrCode,
+    badge: "Khuyên dùng",
+  },
+  {
+    id: "MOMO",
+    name: "Ví điện tử MoMo",
+    desc: "Thanh toán siêu tốc qua ứng dụng Ví MoMo",
+    icon: Smartphone,
+  },
+  {
+    id: "CARD",
+    name: "Thẻ ghi nợ / Tín dụng quốc tế",
+    desc: "Hỗ trợ thẻ Visa, MasterCard, JCB nội địa và quốc tế",
+    icon: CreditCard,
+  },
 ]
-
-const VALID_VOUCHERS: Record<string, number> = {
-  "SUMMER20": 0.2,
-  "WELCOME10": 0.1,
-  "THAD50K": 50000,
-}
 
 function formatCountdown(s: number) {
   const m = Math.floor(s / 60)
   const sec = s % 60
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
-}
-
-function makeCode() {
-  const today = new Date()
-  const ymd = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`
-  const rand = Math.random().toString(36).slice(2, 7).toUpperCase()
-  return `THAD-${ymd}-${rand}`
 }
 
 export default function PaymentPage() {
@@ -43,25 +59,32 @@ export default function PaymentPage() {
     customer,
     payment,
     setPayment,
+    termsAgreed,
+    setTermsAgreed,
     discount,
     setDiscount,
     discountCode,
     setDiscountCode,
     search,
-    setBookingCode
+    setBookingCode,
+    saveBookingToPMS,
   } = useBooking()
 
   const room = selectedRoomId ? getRoom(selectedRoomId) : undefined
-  const [seconds, setSeconds] = useState(15 * 60)
+  const [seconds, setSeconds] = useState(15 * 60) // 15 phút (900s) holding timeout
   const [processing, setProcessing] = useState(false)
-  const [voucherCode, setVoucherCode] = useState(discountCode || "")
+  const [voucherInput, setVoucherInput] = useState(discountCode || "")
   const [voucherError, setVoucherError] = useState("")
-  const [showVoucherInput, setShowVoucherInput] = useState(false)
-  const [voucherSuccess, setVoucherSuccess] = useState(false)
+  const [voucherSuccessMsg, setVoucherSuccessMsg] = useState("")
+  const [termsError, setTermsError] = useState("")
 
-  // Modal states
-  const [showRoomTakenModal, setShowRoomTakenModal] = useState(false)
-  const [showPaymentFailedModal, setShowPaymentFailedModal] = useState(false)
+  // Available vouchers store
+  const [availableVouchers, setAvailableVouchers] = useState<Voucher[]>(INITIAL_VOUCHERS)
+
+  // Modals
+  const [showTimeoutModal, setShowTimeoutModal] = useState(false)
+  const [showQRModal, setShowQRModal] = useState(false)
+  const [currentPnr, setCurrentPnr] = useState("")
 
   useEffect(() => {
     if (!selectedRoomId || !customer.name) {
@@ -69,395 +92,438 @@ export default function PaymentPage() {
     }
   }, [selectedRoomId, customer.name, router])
 
+  // Lấy danh sách Voucher mới nhất từ LocalStorage (F6)
   useEffect(() => {
-    const t = setInterval(() => setSeconds((s) => (s > 0 ? s - 1 : 0)), 1000)
-    return () => clearInterval(t)
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("hotel_vouchers_v3")
+      if (stored) {
+        try {
+          setAvailableVouchers(JSON.parse(stored))
+        } catch {
+          setAvailableVouchers(INITIAL_VOUCHERS)
+        }
+      }
+    }
   }, [])
 
+  // Đếm ngược 15 phút giữ chỗ tạm thời (BR_F2_02)
   useEffect(() => {
-    if (seconds === 0) {
-      alert("Thời gian giữ phòng đã hết. Vui lòng tìm kiếm lại phòng khác.")
-      router.push("/search")
-    }
-  }, [seconds, router])
+    const timer = setInterval(() => {
+      setSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer)
+          setShowTimeoutModal(true)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   if (!room) return null
 
-  const nightsCount = nights(search.checkIn, search.checkOut)
-  const subtotal = room.price * nightsCount
+  // Tính số đêm lưu trú
+  const calculateNights = () => {
+    if (!search.checkIn || !search.checkOut) return 1
+    const start = new Date(search.checkIn).getTime()
+    const end = new Date(search.checkOut).getTime()
+    const diff = Math.round((end - start) / (1000 * 60 * 60 * 24))
+    return Math.max(1, diff)
+  }
+
+  const nights = calculateNights()
+  const subtotal = room.price * nights
   const discountAmount = discount > 0 ? discount : 0
-  const total = Math.max(0, subtotal - discountAmount)
+  const afterDiscount = Math.max(0, subtotal - discountAmount)
 
-  const validateVoucher = (code: string): { valid: boolean; message: string; value: number } => {
-    const trimmedCode = code.trim().toUpperCase()
+  // Quy tắc nghiệp vụ BR_F2_01: Cọc tối thiểu 50% tổng giá trị phòng sau voucher
+  const depositRequired = Math.round(afterDiscount * 0.5)
+  const remainingAtCheckin = afterDiscount - depositRequired
 
-    if (!trimmedCode) {
-      return { valid: false, message: "Vui lòng nhập mã giảm giá", value: 0 }
-    }
+  // Kiểm tra mã voucher theo đặc tả 3.3.2 & 3.3.4 (Ngoại lệ 5 - E5)
+  const handleApplyVoucher = (e: React.FormEvent) => {
+    e.preventDefault()
+    setVoucherError("")
+    setVoucherSuccessMsg("")
 
-    const voucherValue = VALID_VOUCHERS[trimmedCode]
-
-    if (!voucherValue) {
-      return { valid: false, message: "Mã giảm giá không hợp lệ hoặc đã hết hạn", value: 0 }
-    }
-
-    let discountValue = 0
-    if (voucherValue <= 1) {
-      discountValue = subtotal * voucherValue
-    } else {
-      discountValue = Math.min(voucherValue, subtotal)
-    }
-
-    return { valid: true, message: "", value: discountValue }
-  }
-
-  const handleApplyVoucher = () => {
-    const result = validateVoucher(voucherCode)
-    setVoucherError(result.message)
-
-    if (result.valid) {
-      setDiscount(result.value)
-      setDiscountCode(voucherCode.trim().toUpperCase())
-      setVoucherSuccess(true)
-      setTimeout(() => setVoucherSuccess(false), 3000)
-    } else {
-      setDiscount(0)
-      setDiscountCode("")
-      setVoucherSuccess(false)
-    }
-  }
-
-  const handleVoucherChange = (code: string) => {
-    setVoucherCode(code)
-    if (voucherError) {
-      setVoucherError("")
-      setVoucherSuccess(false)
-    }
-  }
-
-  // Tách riêng logic xử lý thanh toán (không kiểm tra availability nữa)
-  const processPayment = () => {
-    setProcessing(true)
-    setShowPaymentFailedModal(false)
-
-    setTimeout(() => {
-      const isPaymentSuccess = Math.random() > 0.25
-
-      if (isPaymentSuccess) {
-        setBookingCode(makeCode())
-        router.push("/success")
-      } else {
-        setProcessing(false)
-        setShowPaymentFailedModal(true)
-      }
-    }, 1500)
-  }
-
-  const handlePay = () => {
-    if (!payment) return
-
-    // Ngoại lệ 4: Kiểm tra phòng còn khả dụng không
-    const isRoomStillAvailable = Math.random() > 0.25
-
-    if (!isRoomStillAvailable) {
-      setShowRoomTakenModal(true)
+    const code = voucherInput.trim().toUpperCase()
+    if (!code) {
+      setVoucherError("Vui lòng nhập mã giảm giá!")
       return
     }
 
-    // Nếu phòng còn, tiến hành thanh toán
-    processPayment()
+    // Tra cứu trong kho Voucher
+    const found = availableVouchers.find((v) => v.code.toUpperCase() === code)
+    const todayStr = new Date().toISOString().slice(0, 10)
+
+    if (
+      !found ||
+      found.status !== "Active" ||
+      (found.endDate && found.endDate < todayStr) ||
+      (found.used >= found.quantity)
+    ) {
+      setVoucherError("Mã giảm giá không hợp lệ hoặc đã hết lượt sử dụng!")
+      setDiscount(0)
+      setDiscountCode("")
+      return
+    }
+
+    // Áp dụng thành công
+    const calculatedDiscount = Math.round(subtotal * (found.percent / 100))
+    setDiscount(calculatedDiscount)
+    setDiscountCode(found.code)
+    setVoucherSuccessMsg(`Áp dụng thành công mã ${found.code} (Giảm ${found.percent}%)!`)
+  }
+
+  // Xử lý xác nhận cọc và điều hướng thanh toán
+  const handleConfirmBooking = () => {
+    if (!termsAgreed) {
+      setTermsError("Vui lòng tích chọn đồng ý với điều khoản lưu trú của HST Hotel!")
+      return
+    }
+    setTermsError("")
+
+    // Sinh mã đặt phòng PNR duy nhất theo chuẩn: HST + 5 chữ số
+    const randomNum = Math.floor(10000 + Math.random() * 90000)
+    const pnr = `HST${randomNum}`
+    setCurrentPnr(pnr)
+
+    setProcessing(true)
+
+    // Hiển thị cổng thanh toán mô phỏng
+    setTimeout(() => {
+      setProcessing(false)
+      setShowQRModal(true)
+    }, 800)
+  }
+
+  const handleFinishPayment = () => {
+    setShowQRModal(false)
+    setProcessing(true)
+
+    setTimeout(() => {
+      // Map room type
+      let rType = RoomType.STANDARD
+      if (room.type === "Superior") rType = RoomType.SUPERIOR
+      if (room.type === "Deluxe") rType = RoomType.DELUXE
+      if (room.type === "Suite") rType = RoomType.SUITE
+
+      // Lưu đơn vào Store chung để Lễ tân F3 tra cứu ngay
+      saveBookingToPMS(currentPnr, rType, nights)
+      setBookingCode(currentPnr)
+      router.push("/success")
+    }, 1000)
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/50">
       <SiteHeader />
 
-      {/* Modal: Phòng bị đặt mất (Ngoại lệ 4) */}
-      {showRoomTakenModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div className="relative z-10 mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
-            <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-red-100">
-              <svg
-                className="size-6 text-red-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
-                />
-              </svg>
+      {/* Modal hết giờ giữ chỗ 15 phút (E6) */}
+      {showTimeoutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="relative z-10 w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl text-center">
+            <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+              <Clock className="size-7" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900">Phòng đã bị đặt mất</h3>
-            <p className="mt-2 text-sm text-slate-500">
-              Rất tiếc, phòng{" "}
-              <span className="font-medium text-slate-700">{room.name}</span> vừa được
-              khách hàng khác hoàn tất thanh toán trong lúc bạn thực hiện giao dịch.
+            <h3 className="text-xl font-bold text-slate-900">Hết thời gian giữ chỗ</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Giao dịch thanh toán cọc không thành công do quá thời gian 15 phút. Phiên giữ chỗ đã được giải phóng để nhường cho khách hàng khác!
             </p>
-            <div className="mt-4 flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-left text-xs text-slate-500">
-              <svg
-                className="mt-0.5 size-3.5 shrink-0 text-blue-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z"
-                />
-              </svg>
-              Vui lòng quay lại để chọn phòng và đặt lại từ đầu.
-            </div>
             <button
               onClick={() => {
-                setShowRoomTakenModal(false)
+                setShowTimeoutModal(false)
                 router.push("/search")
               }}
-              className="mt-5 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+              className="mt-6 w-full rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-700"
             >
-              QUAY LẠI CHỌN PHÒNG
+              Quay lại tìm kiếm phòng
             </button>
           </div>
         </div>
       )}
 
-      {/* Modal: Thanh toán thất bại (Ngoại lệ 3) */}
-      {showPaymentFailedModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div className="relative z-10 mx-4 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
-            <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-red-100">
-              <svg className="size-6 text-red-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
-                />
-              </svg>
+      {/* Modal giả lập Cổng thanh toán (QR Pay / Thẻ / MoMo) */}
+      {showQRModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowQRModal(false)} />
+          <div className="relative z-10 w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Lock className="size-5 text-blue-600" />
+                <h3 className="font-bold text-slate-900">
+                  {payment === "VNPAY" ? "Cổng thanh toán VNPay-QR" : payment === "MOMO" ? "Cổng thanh toán MoMo" : "Cổng thẻ Quốc tế"}
+                </h3>
+              </div>
+              <button onClick={() => setShowQRModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="size-5" />
+              </button>
             </div>
-            <h3 className="text-lg font-bold text-slate-900">Giao dịch chưa thành công</h3>
-            <p className="mt-2 text-sm text-slate-500">
-              Rất tiếc, giao dịch của bạn không thể hoàn tất. Vui lòng thử lại hoặc
-              chọn phương thức thanh toán khác.
-            </p>
-            <div className="mt-4 flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-left text-xs text-slate-500">
-              <svg
-                className="mt-0.5 size-3.5 shrink-0 text-blue-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
+
+            <div className="text-center py-4">
+              <div className="mx-auto size-48 bg-slate-100 border border-slate-300 rounded-xl flex flex-col items-center justify-center p-3">
+                <QrCode className="size-36 text-slate-800" />
+                <span className="text-[10px] text-slate-500 font-mono mt-1">QUÉT MÃ ĐỂ THANH TOÁN</span>
+              </div>
+
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-900">
+                <p className="font-semibold">Mã PNR: <span className="font-mono text-blue-700">{currentPnr}</span></p>
+                <p className="mt-1">Số tiền cọc cần trả (50%): <strong className="text-blue-700">{formatVND(depositRequired)}</strong></p>
+              </div>
+
+              <p className="mt-3 text-xs text-slate-500">
+                (Môi trường kiểm thử giả lập: Nhấn nút bên dưới để mô phỏng khách hàng quét mã và ngân hàng phản hồi giao dịch thành công)
+              </p>
+
+              <button
+                onClick={handleFinishPayment}
+                className="mt-5 w-full rounded-lg bg-emerald-600 py-3 text-sm font-bold text-white hover:bg-emerald-700 shadow-md transition-colors"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z"
-                />
-              </svg>
-              <span>
-                Chúng tôi đang giữ phòng thêm{" "}
-                <span className="font-semibold text-slate-700 tabular-nums">
-                  {formatCountdown(seconds)}
-                </span>
-                . Hãy hoàn tất trước khi hết giờ, sau đó phòng sẽ tự động giải phóng.
-              </span>
+                Xác nhận đã quét mã &amp; Hoàn tất cọc
+              </button>
             </div>
-            <button
-              onClick={processPayment}
-              className="mt-5 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
-            >
-              THỬ LẠI NGAY
-            </button>
-            <button
-              onClick={() => {
-                setShowPaymentFailedModal(false)
-                setPayment("")
-              }}
-              className="mt-2 w-full rounded-lg border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              CHỌN PHƯƠNG THỨC KHÁC
-            </button>
           </div>
         </div>
       )}
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
-        <Link
-          href="/booking"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-blue-600 transition-colors"
-        >
-          <ArrowLeft className="size-4" /> Quay lại thông tin đặt phòng
-        </Link>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6">
+        <div className="flex items-center justify-between">
+          <Link
+            href="/booking"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-blue-600 transition-colors"
+          >
+            <ArrowLeft className="size-4" /> Quay lại thông tin khách
+          </Link>
+          <span className="text-xs font-semibold px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full">
+            Bước 2: Thanh toán cọc &amp; Xác nhận PNR
+          </span>
+        </div>
 
-        <h1 className="mt-4 text-2xl font-bold text-slate-900">Thanh toán</h1>
+        {/* Thanh đếm ngược 15 phút (900s) giữ phòng */}
+        <div className="mt-4 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <Clock className="size-5 text-amber-600 animate-pulse" />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-amber-800">
+                Thời gian giữ chỗ tạm thời (BR_F2_02)
+              </p>
+              <p className="text-xs text-amber-700">
+                Phòng đang được khóa giữ trong 15 phút. Quý khách vui lòng hoàn tất đặt cọc trước khi hết giờ.
+              </p>
+            </div>
+          </div>
+          <div className="font-mono text-2xl font-black text-amber-600">
+            {formatCountdown(seconds)}
+          </div>
+        </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
-          <div className="space-y-6">
-            {/* Thông tin khách hàng */}
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-base font-semibold text-slate-900">Thông tin khách hàng</h2>
-              <dl className="mt-3 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <dt className="text-slate-500">Họ và tên</dt>
-                  <dd className="font-medium text-slate-900">{customer.name}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-slate-500">Email</dt>
-                  <dd className="font-medium text-slate-900">{customer.email}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-slate-500">Số điện thoại</dt>
-                  <dd className="font-medium text-slate-900">{customer.phone}</dd>
-                </div>
-                {customer.note && (
-                  <div className="flex justify-between">
-                    <dt className="text-slate-500">Ghi chú</dt>
-                    <dd className="font-medium text-slate-900 max-w-[200px] text-right break-words">
-                      {customer.note}
-                    </dd>
-                  </div>
-                )}
-              </dl>
+        <div className="mt-8 grid gap-8 lg:grid-cols-[380px_1fr] items-start">
+          {/* Cột trái: Tóm tắt chi phí thanh toán */}
+          <aside className="h-fit rounded-xl bg-white border border-slate-200 p-6 shadow-sm">
+            <h2 className="font-bold text-lg mb-4 text-slate-900">Chi tiết thanh toán</h2>
+
+            <div className="space-y-3 text-sm border-b border-slate-200 pb-4">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Khách đặt:</span>
+                <span className="font-semibold text-slate-900">{customer.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">CCCD:</span>
+                <span className="font-mono font-medium text-slate-900">{customer.idNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Hạng phòng:</span>
+                <span className="font-semibold text-slate-900">{room.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Kỳ lưu trú:</span>
+                <span className="font-medium text-slate-900">{nights} đêm</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Giá phòng 1 đêm:</span>
+                <span className="text-slate-900">{formatVND(room.price)}</span>
+              </div>
             </div>
 
-            {/* Mã giảm giá */}
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              {!showVoucherInput ? (
-                <button
-                  onClick={() => setShowVoucherInput(true)}
-                  className="flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors"
-                >
-                  <Tag className="size-4" /> Áp dụng mã giảm giá
-                </button>
-              ) : (
-                <div className="space-y-3">
-                  <label className="text-sm font-semibold text-slate-900">Mã giảm giá</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={voucherCode}
-                      onChange={(e) => handleVoucherChange(e.target.value)}
-                      placeholder="Nhập mã giảm giá (VD: SUMMER20, WELCOME10, THAD50K)"
-                      className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none transition-all focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                    />
-                    <button
-                      onClick={handleApplyVoucher}
-                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
-                    >
-                      Áp dụng
-                    </button>
-                  </div>
+            <div className="space-y-2 py-4 border-b border-slate-200 text-sm">
+              <div className="flex justify-between text-slate-700">
+                <span>Tổng tiền phòng:</span>
+                <span>{formatVND(subtotal)}</span>
+              </div>
 
-                  {voucherError && (
-                    <div className="mt-1 flex items-center gap-1.5 text-xs text-red-600">
-                      <AlertCircle className="size-3.5" />
-                      <span>{voucherError}</span>
-                    </div>
-                  )}
-
-                  {voucherSuccess && !voucherError && discountAmount > 0 && (
-                    <p className="text-xs text-green-600">
-                      ✓ Đã áp dụng mã {voucherCode.trim().toUpperCase()}. Giảm{" "}
-                      {formatVND(discountAmount)}
-                    </p>
-                  )}
-
-                  <p className="text-xs text-slate-400">
-                    Mã thử nghiệm: SUMMER20 (20%), WELCOME10 (10%), THAD50K (50,000đ)
-                  </p>
+              {discount > 0 && (
+                <div className="flex justify-between text-emerald-600 font-medium">
+                  <span>Mã ưu đãi ({discountCode}):</span>
+                  <span>-{formatVND(discount)}</span>
                 </div>
               )}
+
+              <div className="flex justify-between font-bold text-slate-900 text-base pt-2">
+                <span>Tổng sau giảm giá:</span>
+                <span>{formatVND(afterDiscount)}</span>
+              </div>
             </div>
 
-            {/* Phương thức thanh toán */}
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-base font-semibold text-slate-900">Phương thức thanh toán</h2>
-              <p className="text-xs text-slate-400 mt-1 mb-3">
-                Vui lòng chọn một phương thức thanh toán để tiếp tục
+            {/* Khối cọc 50% theo BR_F2_01 */}
+            <div className="mt-4 p-4 rounded-xl bg-blue-50 border border-blue-200 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-bold text-blue-900">Tiền cọc cần thanh toán (50%):</span>
+                <span className="text-xl font-extrabold text-blue-700">{formatVND(depositRequired)}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs text-slate-500 border-t border-blue-200/60 pt-2">
+                <span>Còn lại thanh toán khi Check-in:</span>
+                <span className="font-semibold text-slate-700">{formatVND(remainingAtCheckin)}</span>
+              </div>
+            </div>
+
+            {/* Nhập mã Voucher F6 */}
+            <form onSubmit={handleApplyVoucher} className="mt-6">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-2 flex items-center gap-1.5">
+                <Tag className="size-3.5" /> Mã giảm giá Voucher (F6)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={voucherInput}
+                  onChange={(e) => {
+                    setVoucherInput(e.target.value.toUpperCase())
+                    setVoucherError("")
+                  }}
+                  placeholder="VD: HST2026, SUMMER20"
+                  className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm uppercase font-mono outline-none focus:border-blue-400"
+                />
+                <button
+                  type="submit"
+                  className="rounded-lg bg-slate-800 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-900"
+                >
+                  Áp dụng
+                </button>
+              </div>
+              {voucherError && (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600 font-medium">
+                  <AlertCircle className="size-3.5 shrink-0" />
+                  <span>{voucherError}</span>
+                </div>
+              )}
+              {voucherSuccessMsg && (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+                  <CheckCircle2 className="size-3.5 shrink-0" />
+                  <span>{voucherSuccessMsg}</span>
+                </div>
+              )}
+            </form>
+          </aside>
+
+          {/* Cột phải: Chọn phương thức & Điều khoản */}
+          <div className="space-y-6">
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-900 mb-1">
+                Phương thức thanh toán cọc trực tuyến
+              </h2>
+              <p className="text-xs text-slate-500 mb-5">
+                Chọn một trong các phương thức thanh toán an toàn được HST Hotel bảo chứng:
               </p>
-              <div className="mt-2 space-y-3">
-                {methods.map((m) => {
+
+              <div className="space-y-3">
+                {paymentMethods.map((m) => {
                   const Icon = m.icon
-                  const active = payment === m.id
+                  const isSelected = payment === m.id
                   return (
                     <label
                       key={m.id}
-                      className={`flex cursor-pointer items-center gap-3 rounded-lg border p-4 transition-all ${active
-                        ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
-                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                        }`}
+                      onClick={() => setPayment(m.id)}
+                      className={`flex cursor-pointer items-center justify-between rounded-xl border p-4 transition-all ${
+                        isSelected
+                          ? "border-blue-600 bg-blue-50/50 shadow-sm ring-1 ring-blue-600"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                      }`}
                     >
-                      <input
-                        type="radio"
-                        name="payment"
-                        value={m.id}
-                        checked={active}
-                        onChange={() => setPayment(m.id)}
-                        className="size-4 accent-blue-600"
-                      />
-                      <Icon
-                        className={`size-5 ${active ? "text-blue-600" : "text-slate-400"}`}
-                      />
-                      <span
-                        className={`text-sm font-medium ${active ? "text-blue-700" : "text-slate-700"
-                          }`}
-                      >
-                        {m.label}
-                      </span>
+                      <div className="flex items-center gap-3.5">
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          checked={isSelected}
+                          onChange={() => setPayment(m.id)}
+                          className="size-4 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div className="flex size-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                          <Icon className="size-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm text-slate-900">{m.name}</span>
+                            {m.badge && (
+                              <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                                {m.badge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{m.desc}</p>
+                        </div>
+                      </div>
                     </label>
                   )
                 })}
               </div>
-              <p className="mt-4 flex items-center gap-1.5 text-xs text-slate-500">
-                <ShieldCheck className="size-3.5" /> Bạn sẽ được chuyển đến cổng thanh
-                toán an toàn để hoàn tất giao dịch.
-              </p>
+            </div>
+
+            {/* Checkbox điều khoản lưu trú (Bắt buộc theo đặc tả 3.3.2) */}
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="termsAgreement"
+                  checked={termsAgreed}
+                  onChange={(e) => {
+                    setTermsAgreed(e.target.checked)
+                    if (e.target.checked) setTermsError("")
+                  }}
+                  className="mt-1 size-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <label htmlFor="termsAgreement" className="text-sm text-slate-700 cursor-pointer leading-relaxed">
+                  Tôi đồng ý với <strong>Chính sách đặt phòng và Quy định thanh toán cọc</strong> của HST Hotel.
+                  Tôi cam kết thông tin số định danh CCCD đã khai báo là chính xác để đối chiếu khi làm thủ tục Check-in.
+                </label>
+              </div>
+
+              {termsError && (
+                <div className="flex items-center gap-1.5 text-xs text-red-600 font-medium">
+                  <AlertCircle className="size-4 shrink-0" />
+                  <span>{termsError}</span>
+                </div>
+              )}
+
+              <div className="border-t border-slate-100 pt-4 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <ShieldCheck className="size-4 text-emerald-600" />
+                  Mã hóa bảo mật 256-bit SSL
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmBooking}
+                  disabled={processing}
+                  className={`flex items-center gap-2 rounded-lg px-8 py-3.5 text-sm font-bold text-white transition-all shadow-md ${
+                    processing
+                      ? "bg-slate-400 cursor-not-allowed"
+                      : "bg-blue-600 hover:bg-blue-700 cursor-pointer"
+                  }`}
+                >
+                  {processing ? (
+                    <>
+                      <span className="animate-spin">⏳</span> Đang chuyển cổng thanh toán...
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="size-4" /> Xác nhận và Thanh toán cọc ({formatVND(depositRequired)})
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
-
-          {/* Order Summary và nút thanh toán */}
-          <aside className="space-y-4">
-            <OrderSummary
-              room={room}
-              discount={discountAmount}
-              discountCode={discountCode}
-              nights={nightsCount}
-            />
-
-            <button
-              onClick={handlePay}
-              disabled={processing || !payment}
-              className={`w-full rounded-lg py-3 text-sm font-semibold transition-all ${payment && !processing
-                ? "bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
-                : "bg-slate-300 text-white cursor-not-allowed opacity-60"
-                }`}
-            >
-              {processing ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="animate-spin">⏳</span> Đang xử lý...
-                </span>
-              ) : payment ? (
-                `XÁC NHẬN THANH TOÁN ${formatVND(total)}`
-              ) : (
-                "VUI LÒNG CHỌN PHƯƠNG THỨC THANH TOÁN"
-              )}
-            </button>
-
-            <p className="text-center text-xs text-slate-400">
-              Thông tin của bạn sẽ được bảo mật theo chính sách bảo vệ dữ liệu cá nhân.
-            </p>
-          </aside>
         </div>
       </main>
       <SiteFooter />
