@@ -1,181 +1,347 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, Plus, MoreVertical, X, UploadCloud, AlertCircle, ToggleLeft, ToggleRight, Calendar, Loader2 } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  X,
+  AlertCircle,
+  Tag,
+  Calendar,
+  CheckCircle2,
+  Trash2,
+  Edit3,
+  Percent,
+  Layers,
+  PauseCircle,
+  PlayCircle,
+  Sparkles
+} from 'lucide-react';
 import SuccessToast from '@/components/admin/SuccessToast';
 import { useAdmin } from '@/app/admin/AdminProvider';
-import { EventStatus, HotelEvent } from '@/app/admin/types';
+import { Voucher } from '@/app/admin/types';
 
 export default function EventsManagementPage() {
-  const { events, setEvents } = useAdmin();
-  
-  const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [errorToast, setErrorToast] = useState('');
-  
-  // Edit & Delete states
-  const [editingEvent, setEditingEvent] = useState<HotelEvent | null>(null);
-  const [eventToDelete, setEventToDelete] = useState<HotelEvent | null>(null);
-  const [showConfirmPopup, setShowConfirmPopup] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [fileError, setFileError] = useState(false);
-  const [showError, setShowError] = useState(false); // Form validation error
-  const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
-  const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
+  const { vouchers, setVouchers, addVoucher, updateVoucher } = useAdmin();
 
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingVoucher, setEditingVoucher] = useState<Voucher | null>(null);
+  const [voucherToDelete, setVoucherToDelete] = useState<Voucher | null>(null);
+  const [toastMessage, setToastMessage] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Form states theo đặc tả F6 (3.11.2)
   const [formData, setFormData] = useState({
     title: '',
-    shortDesc: '',
-    type: 'Sự kiện',
-    isScheduled: false,
-    publishDate: '',
-    image: '/placeholder.svg',
-    startDate: '',
-    endDate: '',
-    maxPeople: '',
-    discountPercent: ''
+    code: '',
+    percent: 15,
+    startDate: todayStr,
+    endDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+    quantity: 500,
   });
 
-  const getStatusSelect = (event: HotelEvent) => {
-    return (
-      <select 
-        value={event.status}
-        onChange={(e) => {
-          setEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, status: e.target.value as EventStatus } : ev));
-          setToastMessage(`Đã cập nhật trạng thái bài viết ${event.id}`);
-        }}
-        className={`px-2 py-1 rounded-full text-xs font-semibold outline-none border border-transparent hover:border-slate-300 focus:border-blue-500 transition-colors ${
-          event.status === EventStatus.ACTIVE ? 'bg-emerald-100 text-emerald-800' :
-          event.status === EventStatus.SCHEDULED ? 'bg-blue-100 text-blue-800' :
-          'bg-slate-100 text-slate-800'
-        }`}
-      >
-        <option value="ACTIVE">Đang hoạt động</option>
-        <option value="SCHEDULED">Đã lên lịch</option>
-        <option value="INACTIVE">Đã ẩn</option>
-      </select>
-    );
+  // Validation errors E1 - E6
+  const [errors, setErrors] = useState({
+    title: '',
+    code: '',
+    percent: '',
+    startDate: '',
+    endDate: '',
+    quantity: '',
+  });
+
+  const validateForm = () => {
+    const errs = { title: '', code: '', percent: '', startDate: '', endDate: '', quantity: '' };
+    const title = formData.title.trim();
+    const code = formData.code.trim().toUpperCase();
+    const percent = Number(formData.percent);
+    const quantity = Number(formData.quantity);
+
+    // E1: Tên sự kiện 5 đến 100 ký tự, không chứa <, >, script
+    if (title.length < 5 || title.length > 100 || /[<>]/.test(title) || /script/i.test(title)) {
+      errs.title = 'Tên sự kiện phải từ 5 đến 100 ký tự và không chứa ký tự độc hại (E1)!';
+    }
+
+    // E2: Mã voucher 4-15 ký tự chữ số in hoa không dấu, không trùng
+    if (!/^[A-Z0-9]{4,15}$/.test(code)) {
+      errs.code = 'Mã Voucher phải gồm 4 đến 15 ký tự chữ và số in hoa không dấu (E2)!';
+    } else {
+      const isDuplicate = vouchers.some(
+        (v) => v.code.toUpperCase() === code && (!editingVoucher || v.id !== editingVoucher.id)
+      );
+      if (isDuplicate) {
+        errs.code = 'Mã Voucher này đã tồn tại trên hệ thống (E2)!';
+      }
+    }
+
+    // E3: Tỷ lệ giảm giá 1% đến 70%
+    if (isNaN(percent) || percent < 1 || percent > 70) {
+      errs.percent = 'Mức giảm giá voucher phải từ 1% đến 70% (E3)!';
+    }
+
+    // E4: Ngày bắt đầu >= Ngày hiện tại
+    if (!formData.startDate || formData.startDate < todayStr) {
+      errs.startDate = 'Ngày bắt đầu không thể nhỏ hơn ngày hiện tại (E4)!';
+    }
+
+    // E5: Ngày kết thúc >= Ngày bắt đầu
+    if (!formData.endDate || formData.endDate < formData.startDate) {
+      errs.endDate = 'Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu (E5)!';
+    }
+
+    // E6: Số lượng phát hành 1 đến 10,000 lượt
+    if (isNaN(quantity) || quantity < 1 || quantity > 10000) {
+      errs.quantity = 'Số lượng voucher phát hành phải từ 1 đến 10,000 lượt (E6)!';
+    }
+
+    setErrors(errs);
+    return !errs.title && !errs.code && !errs.percent && !errs.startDate && !errs.endDate && !errs.quantity;
   };
 
-  const filteredEvents = events.filter(ev => {
-    const matchSearch = ev.title.toLowerCase().includes(searchQuery.toLowerCase()) || ev.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchType = typeFilter === 'all' || ev.type === typeFilter;
-    return matchSearch && matchType;
+  const handleOpenAdd = () => {
+    setEditingVoucher(null);
+    setFormData({
+      title: 'Chào hè rực rỡ 2026',
+      code: 'SUMMER2026',
+      percent: 20,
+      startDate: todayStr,
+      endDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      quantity: 500,
+    });
+    setErrors({ title: '', code: '', percent: '', startDate: '', endDate: '', quantity: '' });
+    setIsAddModalOpen(true);
+  };
+
+  const handleOpenEdit = (voucher: Voucher) => {
+    setEditingVoucher(voucher);
+    setFormData({
+      title: voucher.title,
+      code: voucher.code,
+      percent: voucher.percent,
+      startDate: voucher.startDate,
+      endDate: voucher.endDate,
+      quantity: voucher.quantity,
+    });
+    setErrors({ title: '', code: '', percent: '', startDate: '', endDate: '', quantity: '' });
+    setIsAddModalOpen(true);
+  };
+
+  const handleSaveVoucher = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+
+    const code = formData.code.trim().toUpperCase();
+
+    if (editingVoucher) {
+      updateVoucher(editingVoucher.id, {
+        title: formData.title.trim(),
+        code,
+        percent: Number(formData.percent),
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        quantity: Number(formData.quantity),
+      });
+      setToastMessage(`Đã cập nhật chiến dịch voucher ${code} thành công!`);
+    } else {
+      const newV: Voucher = {
+        id: `VOUCHER-${Date.now()}`,
+        title: formData.title.trim(),
+        code,
+        percent: Number(formData.percent),
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        quantity: Number(formData.quantity),
+        used: 0,
+        status: 'Active',
+      };
+      addVoucher(newV);
+      setToastMessage(`Đã kích hoạt phát hành chiến dịch Voucher ${code} (F6 - S1)!`);
+    }
+
+    setIsAddModalOpen(false);
+  };
+
+  const handleToggleStatus = (voucher: Voucher) => {
+    const nextStatus = voucher.status === 'Active' ? 'Suspended' : 'Active';
+    updateVoucher(voucher.id, { status: nextStatus });
+    setToastMessage(`Đã chuyển trạng thái Voucher ${voucher.code} sang ${nextStatus === 'Active' ? 'Hoạt động' : 'Tạm dừng'}`);
+  };
+
+  const handleDeleteVoucher = () => {
+    if (!voucherToDelete) return;
+    setVouchers((prev) => prev.filter((v) => v.id !== voucherToDelete.id));
+    setToastMessage(`Đã xóa voucher ${voucherToDelete.code}.`);
+    setVoucherToDelete(null);
+  };
+
+  // Tính trạng thái thực tế bám sát quy tắc BR_F6_02:
+  // Khi qua hạn ngày kết thúc hoặc số lượng used >= quantity -> Expired
+  const getEvaluatedStatus = (v: Voucher) => {
+    if (v.status === 'Suspended') return 'Suspended';
+    if (v.endDate && v.endDate < todayStr) return 'Expired';
+    if (v.used >= v.quantity) return 'Expired';
+    return 'Active';
+  };
+
+  const filteredVouchers = vouchers.filter((v) => {
+    const q = searchQuery.toLowerCase();
+    const matchSearch = v.code.toLowerCase().includes(q) || v.title.toLowerCase().includes(q);
+    const evalStatus = getEvaluatedStatus(v);
+    const matchStatus = statusFilter === 'all' || evalStatus === statusFilter;
+    return matchSearch && matchStatus;
   });
 
   return (
-    <div className="p-8 space-y-6 relative h-full flex flex-col bg-[#f8fafc]">
+    <div className="p-8 space-y-6 relative min-h-screen bg-slate-50 flex flex-col">
       <SuccessToast message={toastMessage} onClose={() => setToastMessage('')} />
-      
-      {errorToast && (
-        <div className="fixed top-4 right-4 z-50 animate-in fade-in slide-in-from-top-2">
-          <div className="bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2">
-            <AlertCircle className="h-5 w-5" />
-            <p className="font-semibold text-sm">{errorToast}</p>
-            <button onClick={() => setErrorToast('')} className="ml-2 hover:bg-red-600 p-1 rounded-full"><X className="h-4 w-4"/></button>
-          </div>
-        </div>
-      )}
 
-      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-        <div className="flex gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Tìm kiếm sự kiện, ưu đãi..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm w-72 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <select 
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-700 outline-none"
-          >
-            <option value="all">Tất cả phân loại</option>
-            <option value="Sự kiện">Sự kiện</option>
-            <option value="Ưu đãi">Ưu đãi</option>
-          </select>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <div>
+          <h1 className="text-xl font-black text-slate-900 tracking-tight">
+            Quản lý Sự kiện &amp; Mã giảm giá Voucher (F6)
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Thiết lập chiến dịch coupon, kiểm soát hạn mức % (1-70%), ngân sách phát hành và vòng đời voucher.
+          </p>
         </div>
-        <button 
-          onClick={() => {
-            setEditingEvent(null);
-            setFormData({ title: '', shortDesc: '', type: 'Sự kiện', isScheduled: false, publishDate: '', image: '/placeholder.svg', startDate: '', endDate: '', maxPeople: '', discountPercent: '' });
-            setIsAddPanelOpen(true);
-            setShowError(false);
-            setFormErrors({});
-          }}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm transition-all"
+
+        <button
+          onClick={handleOpenAdd}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
         >
-          <Plus className="h-4 w-4" /> Soạn bài viết mới
+          <Plus className="size-4" /> Tạo sự kiện ưu đãi mới (+F6)
         </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1">
-        <table className="w-full text-left border-collapse">
+      {/* Filter toolbar */}
+      <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 text-xs">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="size-3.5 absolute left-3 top-3 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Tìm theo mã coupon (SUMMER20, HST2026...) hoặc tên..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="border border-slate-300 rounded-lg px-3 py-2 outline-none font-medium"
+        >
+          <option value="all">Tất cả trạng thái</option>
+          <option value="Active">Đang hoạt động (Active)</option>
+          <option value="Expired">Hết hạn / Hết lượt (Expired)</option>
+          <option value="Suspended">Tạm ngưng (Suspended)</option>
+        </select>
+      </div>
+
+      {/* Bảng danh sách Voucher */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1">
+        <table className="w-full text-left border-collapse text-xs">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
-              <th className="p-4 font-semibold">Mã</th>
-              <th className="p-4 font-semibold">Tiêu đề bài viết</th>
-              <th className="p-4 font-semibold">Phân loại</th>
-              <th className="p-4 font-semibold">Trạng thái</th>
-              <th className="p-4 font-semibold">Lượt xem</th>
-              <th className="p-4 font-semibold text-center">Thao tác</th>
+            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+              <th className="p-4">Mã Coupon (Code)</th>
+              <th className="p-4">Tên chương trình ưu đãi</th>
+              <th className="p-4 text-center">Mức giảm (%)</th>
+              <th className="p-4">Thời gian hiệu lực</th>
+              <th className="p-4 text-center">Tiến độ sử dụng</th>
+              <th className="p-4">Trạng thái</th>
+              <th className="p-4 text-center">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredEvents.length > 0 ? filteredEvents.map((ev) => (
-              <tr key={ev.id} className="hover:bg-slate-50/50 transition-colors">
-                <td className="p-4 font-bold text-slate-800 text-sm">{ev.id}</td>
-                <td className="p-4 text-slate-800 text-sm font-semibold max-w-[200px] truncate" title={ev.title}>{ev.title}</td>
-                <td className="p-4 text-slate-600 text-sm">{ev.type}</td>
-                <td className="p-4">{getStatusSelect(ev)}</td>
-                <td className="p-4 text-slate-600 text-sm">{ev.views}</td>
-                <td className="p-4 text-center">
-                  <div className="flex gap-2 justify-center">
-                    <button 
-                      onClick={() => {
-                        setEditingEvent(ev);
-                        setFormData({
-                          title: ev.title,
-                          shortDesc: ev.shortDesc,
-                          type: ev.type,
-                          isScheduled: ev.isScheduled || false,
-                          publishDate: ev.publishDate || '',
-                          image: ev.image || '/placeholder.svg',
-                          startDate: ev.startDate || '',
-                          endDate: ev.endDate || '',
-                          maxPeople: ev.maxPeople?.toString() || '',
-                          discountPercent: ev.discountPercent?.toString() || ''
-                        });
-                        setIsAddPanelOpen(true);
-                        setShowError(false);
-                        setFormErrors({});
-                      }}
-                      className="px-3 py-1.5 border border-slate-200 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
-                    >
-                      Sửa
-                    </button>
-                    <button 
-                      onClick={() => setEventToDelete(ev)}
-                      className="px-3 py-1.5 border border-red-200 rounded-md text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      Xóa
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            )) : (
+            {filteredVouchers.length > 0 ? (
+              filteredVouchers.map((v) => {
+                const status = getEvaluatedStatus(v);
+                const percentUsed = Math.round((v.used / v.quantity) * 100);
+
+                return (
+                  <tr key={v.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="p-4">
+                      <span className="font-mono font-black text-sm text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-200">
+                        {v.code}
+                      </span>
+                    </td>
+                    <td className="p-4 font-semibold text-slate-800 max-w-[240px]">
+                      <p className="truncate" title={v.title}>{v.title}</p>
+                    </td>
+                    <td className="p-4 text-center font-bold text-emerald-700 text-sm">
+                      {v.percent}%
+                    </td>
+                    <td className="p-4 text-slate-600">
+                      {v.startDate} → {v.endDate}
+                    </td>
+                    <td className="p-4 text-center">
+                      <div className="flex flex-col items-center">
+                        <span className="font-semibold text-slate-700 text-[11px]">
+                          {v.used} / {v.quantity} lượt ({percentUsed}%)
+                        </span>
+                        <div className="w-24 h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
+                          <div
+                            className={`h-full ${percentUsed >= 100 ? 'bg-red-500' : 'bg-blue-600'}`}
+                            style={{ width: `${Math.min(100, percentUsed)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                          status === 'Active'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : status === 'Expired'
+                            ? 'bg-slate-200 text-slate-600'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {status === 'Active'
+                          ? 'Hoạt động'
+                          : status === 'Expired'
+                          ? 'Hết hạn / Kín lượt'
+                          : 'Tạm ngưng'}
+                      </span>
+                    </td>
+                    <td className="p-4 text-center">
+                      <div className="flex items-center gap-1.5 justify-center">
+                        <button
+                          onClick={() => handleToggleStatus(v)}
+                          title={status === 'Active' ? 'Tạm ngưng mã' : 'Kích hoạt lại mã'}
+                          className="p-1 text-slate-500 hover:text-slate-800 rounded hover:bg-slate-100"
+                        >
+                          {status === 'Active' ? (
+                            <PauseCircle className="size-4 text-amber-600" />
+                          ) : (
+                            <PlayCircle className="size-4 text-emerald-600" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleOpenEdit(v)}
+                          className="px-2 py-1 border border-slate-300 rounded text-slate-700 hover:bg-slate-100 font-semibold"
+                        >
+                          Sửa
+                        </button>
+                        <button
+                          onClick={() => setVoucherToDelete(v)}
+                          className="px-2 py-1 border border-red-200 rounded text-red-600 hover:bg-red-50 font-semibold"
+                        >
+                          Xóa
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
               <tr>
-                <td colSpan={6} className="p-12 text-center text-slate-500">
-                  <div className="flex flex-col items-center justify-center">
-                    <Search className="h-10 w-10 text-slate-300 mb-3" />
-                    <p className="font-semibold text-slate-600">Không tìm thấy bài viết nào</p>
-                    <p className="text-sm">Thử thay đổi từ khóa tìm kiếm hoặc bộ lọc.</p>
-                  </div>
+                <td colSpan={7} className="p-8 text-center text-slate-400">
+                  Không tìm thấy chiến dịch Voucher nào.
                 </td>
               </tr>
             )}
@@ -183,301 +349,226 @@ export default function EventsManagementPage() {
         </table>
       </div>
 
-      {/* Centered Edit/Add Modal */}
-      {isAddPanelOpen && (
-        <div className="fixed inset-0 z-50 flex justify-center items-center p-4 sm:p-6">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setIsAddPanelOpen(false)}></div>
-          <div className="relative w-[900px] max-w-full bg-white max-h-[95vh] rounded-2xl shadow-2xl flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-200 flex justify-between items-center bg-white shrink-0">
-              <h2 className="text-xl font-bold text-slate-800">{editingEvent ? 'Sửa bài viết' : 'Soạn bài viết mới'}</h2>
-              <button onClick={() => setIsAddPanelOpen(false)} className="h-8 w-8 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-500">
-                <X className="h-5 w-5" />
+      {/* Modal Tạo / Sửa Voucher */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setIsAddModalOpen(false)}
+          />
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <Tag className="size-5 text-blue-600" />
+                <h3 className="text-base font-bold text-slate-900">
+                  {editingVoucher ? `Chỉnh sửa Voucher ${editingVoucher.code}` : 'Tạo sự kiện & Phát hành Voucher mới (F6)'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsAddModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="size-5" />
               </button>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-[1fr_300px] gap-8 bg-slate-50">
-              {/* Cột trái (75%) */}
-              <div className="space-y-6">
-                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-slate-700">Tiêu đề bài viết <span className="text-red-500">*</span></label>
-                    <input 
-                      type="text" 
-                      placeholder="Nhập tiêu đề..." 
-                      value={formData.title}
-                      onChange={(e) => { setFormData({...formData, title: e.target.value}); setFormErrors({...formErrors, title: ''}); }}
-                      className={`w-full px-4 py-2.5 border ${formErrors.title ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all`}
+
+            <form onSubmit={handleSaveVoucher} className="space-y-4">
+              {/* Tên chương trình (E1) */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Tên chương trình sự kiện <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  placeholder="VD: Chào hè rực rỡ 2026"
+                  onChange={(e) => {
+                    setFormData({ ...formData, title: e.target.value });
+                    setErrors((prev) => ({ ...prev, title: '' }));
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg text-xs outline-none ${
+                    errors.title ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                  }`}
+                />
+                <p className="text-[10px] text-slate-400">Độ dài 5-100 ký tự, không chứa &lt;, &gt;, script.</p>
+                {errors.title && (
+                  <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                    <AlertCircle className="size-3" /> {errors.title}
+                  </p>
+                )}
+              </div>
+
+              {/* Mã Coupon & Tỷ lệ giảm (E2 & E3) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Mã Voucher phát hành <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.code}
+                    placeholder="VD: SUMMER2026"
+                    onChange={(e) => {
+                      setFormData({ ...formData, code: e.target.value.toUpperCase() });
+                      setErrors((prev) => ({ ...prev, code: '' }));
+                    }}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs font-mono font-bold uppercase outline-none ${
+                      errors.code ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                    }`}
+                  />
+                  <p className="text-[10px] text-slate-400">4-15 ký tự chữ &amp; số in hoa.</p>
+                  {errors.code && (
+                    <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="size-3" /> {errors.code}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Tỷ lệ giảm giá (%) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={1}
+                      max={70}
+                      value={formData.percent}
+                      onChange={(e) => {
+                        setFormData({ ...formData, percent: Number(e.target.value) });
+                        setErrors((prev) => ({ ...prev, percent: '' }));
+                      }}
+                      className={`w-full px-3 py-2 border rounded-lg text-xs font-bold text-emerald-700 outline-none ${
+                        errors.percent ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                      }`}
                     />
-                    {formErrors.title && <p className="text-xs text-red-500 font-medium">{formErrors.title}</p>}
+                    <Percent className="size-3.5 absolute right-3 top-2.5 text-slate-400" />
                   </div>
-                  
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center">
-                      <label className="text-sm font-semibold text-slate-700">Mô tả ngắn</label>
-                      <span className={`text-xs ${formData.shortDesc.length >= 150 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
-                        {formData.shortDesc.length}/150
-                      </span>
-                    </div>
-                    <textarea 
-                      rows={3}
-                      value={formData.shortDesc}
-                      onChange={(e) => { setFormData({...formData, shortDesc: e.target.value.slice(0, 150)}); setFormErrors({...formErrors, shortDesc: ''}); }}
-                      placeholder="Tóm tắt nội dung chính..."
-                      className={`w-full px-4 py-2.5 border ${formErrors.shortDesc ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none`}
-                    />
-                    {formErrors.shortDesc && <p className="text-xs text-red-500 font-medium">{formErrors.shortDesc}</p>}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-slate-700">Thời gian bắt đầu <span className="text-red-500">*</span></label>
-                      <input 
-                        type="datetime-local" 
-                        value={formData.startDate}
-                        onChange={(e) => { setFormData({...formData, startDate: e.target.value}); setFormErrors({...formErrors, startDate: ''}); }}
-                        className={`w-full px-4 py-2 border ${formErrors.startDate ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500`}
-                      />
-                      {formErrors.startDate && <p className="text-xs text-red-500 font-medium">{formErrors.startDate}</p>}
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-slate-700">Thời gian kết thúc <span className="text-red-500">*</span></label>
-                      <input 
-                        type="datetime-local" 
-                        value={formData.endDate}
-                        onChange={(e) => { setFormData({...formData, endDate: e.target.value}); setFormErrors({...formErrors, endDate: ''}); }}
-                        className={`w-full px-4 py-2 border ${formErrors.endDate ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500`}
-                      />
-                      {formErrors.endDate && <p className="text-xs text-red-500 font-medium">{formErrors.endDate}</p>}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-semibold text-slate-700">Sức chứa tối đa (người) <span className="text-red-500">*</span></label>
-                      <input 
-                        type="number"
-                        min="1"
-                        value={formData.maxPeople}
-                        onChange={(e) => { setFormData({...formData, maxPeople: e.target.value}); setFormErrors({...formErrors, maxPeople: ''}); }}
-                        className={`w-full px-4 py-2 border ${formErrors.maxPeople ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500`}
-                      />
-                      {formErrors.maxPeople && <p className="text-xs text-red-500 font-medium">{formErrors.maxPeople}</p>}
-                    </div>
-                    {formData.type === 'Ưu đãi' && (
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700">Ưu đãi (%) <span className="text-red-500">*</span></label>
-                        <input 
-                          type="number"
-                          min="1"
-                          max="100"
-                          value={formData.discountPercent}
-                          onChange={(e) => { setFormData({...formData, discountPercent: e.target.value}); setFormErrors({...formErrors, discountPercent: ''}); }}
-                          className={`w-full px-4 py-2 border ${formErrors.discountPercent ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500`}
-                        />
-                        {formErrors.discountPercent && <p className="text-xs text-red-500 font-medium">{formErrors.discountPercent}</p>}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-slate-700">Ảnh bìa (Tối đa 5MB)</label>
-                    <div className={`relative border-2 border-dashed ${fileError ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'} rounded-xl p-8 text-center cursor-pointer transition-colors`}>
-                      <input 
-                        type="file" 
-                        accept="image/*"
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        onChange={(e) => {
-                          if (e.target.files && e.target.files[0]) {
-                            if (e.target.files[0].size > 5 * 1024 * 1024) {
-                              setFileError(true);
-                            } else {
-                              setFileError(false);
-                            }
-                          }
-                        }}
-                      />
-                      <UploadCloud className={`h-10 w-10 mx-auto mb-3 ${fileError ? 'text-red-400' : 'text-slate-400'}`} />
-                      <p className="text-sm text-slate-600">Kéo thả ảnh vào đây hoặc <span className="text-blue-600 font-semibold underline">Duyệt file</span></p>
-                      {fileError && <p className="text-xs text-red-500 font-medium mt-2">Tệp vượt quá 5MB. Vui lòng chọn tệp nhỏ hơn.</p>}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-semibold text-slate-700">Nội dung chi tiết</label>
-                    <div className="min-h-[250px] border border-slate-300 rounded-lg bg-slate-50 p-4 text-slate-400 flex items-center justify-center text-sm">
-                      (Trình soạn thảo Rich Text Editor)
-                    </div>
-                  </div>
+                  <p className="text-[10px] text-slate-400">Quy tắc: từ 1% đến 70%.</p>
+                  {errors.percent && (
+                    <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="size-3" /> {errors.percent}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              {/* Cột phải (25%) */}
-              <div className="space-y-6">
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-5">
-                  <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2">Cấu hình xuất bản</h3>
-                  
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-700">Phân loại</label>
-                    <select 
-                      value={formData.type}
-                      onChange={(e) => setFormData({...formData, type: e.target.value})}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="Sự kiện">Sự kiện</option>
-                      <option value="Ưu đãi">Ưu đãi</option>
-                    </select>
-                  </div>
+              {/* Ngày bắt đầu & Ngày kết thúc (E4 & E5) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Ngày bắt đầu hiệu lực <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.startDate}
+                    onChange={(e) => {
+                      setFormData({ ...formData, startDate: e.target.value });
+                      setErrors((prev) => ({ ...prev, startDate: '' }));
+                    }}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs outline-none ${
+                      errors.startDate ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                    }`}
+                  />
+                  {errors.startDate && (
+                    <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="size-3" /> {errors.startDate}
+                    </p>
+                  )}
+                </div>
 
-                  <div className="pt-3 border-t border-slate-100">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-semibold text-slate-700">Lên lịch tự động</label>
-                      <button onClick={() => setFormData({...formData, isScheduled: !formData.isScheduled})}>
-                        {formData.isScheduled ? <ToggleRight className="h-6 w-6 text-blue-600" /> : <ToggleLeft className="h-6 w-6 text-slate-300" />}
-                      </button>
-                    </div>
-                    {formData.isScheduled && (
-                      <div className="mt-3 relative animate-in fade-in slide-in-from-top-2">
-                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <input 
-                          type="datetime-local" 
-                          value={formData.publishDate}
-                          onChange={(e) => { setFormData({...formData, publishDate: e.target.value}); setFormErrors({...formErrors, publishDate: ''}); }}
-                          className={`w-full pl-9 pr-3 py-2 border ${formErrors.publishDate ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500`}
-                        />
-                        {formErrors.publishDate && <p className="text-xs text-red-500 font-medium mt-1">{formErrors.publishDate}</p>}
-                      </div>
-                    )}
-                  </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Ngày kết thúc hiệu lực <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.endDate}
+                    onChange={(e) => {
+                      setFormData({ ...formData, endDate: e.target.value });
+                      setErrors((prev) => ({ ...prev, endDate: '' }));
+                    }}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs outline-none ${
+                      errors.endDate ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                    }`}
+                  />
+                  {errors.endDate && (
+                    <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="size-3" /> {errors.endDate}
+                    </p>
+                  )}
                 </div>
               </div>
-            </div>
 
-            <div className="px-6 py-4 border-t border-slate-200 bg-white flex justify-end gap-3 shrink-0">
-              <button 
-                disabled={isSaving}
-                onClick={() => setIsAddPanelOpen(false)}
-                className="px-6 py-2.5 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition-colors text-sm disabled:opacity-50"
-              >
-                Hủy bỏ
-              </button>
-              <button 
-                disabled={isSaving || fileError}
-                onClick={() => {
-                  let errors: { [key: string]: string } = {};
-                  if (!formData.title.trim()) errors.title = "Vui lòng nhập tiêu đề bài viết.";
-                  if (!formData.shortDesc.trim()) errors.shortDesc = "Vui lòng nhập mô tả ngắn.";
-                  if (formData.isScheduled && !formData.publishDate) errors.publishDate = "Vui lòng chọn thời gian lên lịch xuất bản.";
-                  if (!formData.startDate) errors.startDate = "Vui lòng nhập thời gian bắt đầu.";
-                  if (!formData.endDate) errors.endDate = "Vui lòng nhập thời gian kết thúc.";
-                  else if (formData.startDate && new Date(formData.startDate) >= new Date(formData.endDate)) errors.endDate = "Thời gian kết thúc phải lớn hơn thời gian bắt đầu.";
-                  
-                  if (!formData.maxPeople || isNaN(Number(formData.maxPeople)) || Number(formData.maxPeople) <= 0) errors.maxPeople = "Sức chứa tối đa không hợp lệ (> 0).";
-                  
-                  if (formData.type === 'Ưu đãi') {
-                    if (!formData.discountPercent || isNaN(Number(formData.discountPercent)) || Number(formData.discountPercent) <= 0 || Number(formData.discountPercent) > 100) errors.discountPercent = "Phần trăm ưu đãi không hợp lệ (1-100).";
-                  }
+              {/* Số lượng phát hành (E6) */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Số lượng voucher phát hành (1 - 10,000 lượt) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={formData.quantity}
+                  onChange={(e) => {
+                    setFormData({ ...formData, quantity: Number(e.target.value) });
+                    setErrors((prev) => ({ ...prev, quantity: '' }));
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg text-xs font-bold outline-none ${
+                    errors.quantity ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                  }`}
+                />
+                {errors.quantity && (
+                  <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                    <AlertCircle className="size-3" /> {errors.quantity}
+                  </p>
+                )}
+              </div>
 
-                  if (fileError) {
-                    setErrorToast("Vui lòng chọn ảnh hợp lệ.");
-                    return;
-                  }
-
-                  if (Object.keys(errors).length > 0) {
-                    setFormErrors(errors);
-                    return;
-                  }
-                  
-                  setFormErrors({});
-                  setShowConfirmPopup(true);
-                }}
-                className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-sm transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {formData.isScheduled ? 'Lưu lịch' : (editingEvent ? 'Cập nhật' : 'Xuất bản ngay')}
-              </button>
-            </div>
+              <div className="pt-3 border-t flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow"
+                >
+                  Kích hoạt phát hành
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Confirm Save Popup */}
-      {showConfirmPopup && (
-        <div className="fixed inset-0 z-[60] flex justify-center items-center">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowConfirmPopup(false)}></div>
-          <div className="relative bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full animate-in zoom-in-95">
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Xác nhận {editingEvent ? 'cập nhật' : 'lưu'}?</h3>
-            <p className="text-sm text-slate-500 mb-6">Bạn chắc chắn muốn {editingEvent ? 'cập nhật' : 'lưu'} bài viết <strong>{formData.title}</strong>?</p>
-            <div className="flex gap-3 justify-end">
-              <button 
-                onClick={() => setShowConfirmPopup(false)}
-                className="px-4 py-2 bg-slate-100 rounded-lg text-sm font-semibold hover:bg-slate-200"
-              >
-                Hủy
-              </button>
-              <button 
-                onClick={() => {
-                  setShowConfirmPopup(false);
-                  setIsSaving(true);
-                  
-                  // Remove simulated network error for production
-                  setTimeout(() => {
-                    setIsSaving(false);
-                    // Success
-                      if (editingEvent) {
-                        setEvents(prev => prev.map(ev => ev.id === editingEvent.id ? { 
-                          ...ev, 
-                          ...formData, 
-                          maxPeople: Number(formData.maxPeople),
-                          discountPercent: formData.type === 'Ưu đãi' ? Number(formData.discountPercent) : undefined,
-                          status: formData.isScheduled ? EventStatus.SCHEDULED : (ev.status === EventStatus.SCHEDULED ? EventStatus.ACTIVE : ev.status) 
-                        } : ev));
-                      } else {
-                        const newId = `EV-${(events.length + 1).toString().padStart(3, '0')}`;
-                        setEvents(prev => [{ 
-                          ...formData, 
-                          maxPeople: Number(formData.maxPeople),
-                          discountPercent: formData.type === 'Ưu đãi' ? Number(formData.discountPercent) : undefined,
-                          id: newId, 
-                          status: formData.isScheduled ? EventStatus.SCHEDULED : EventStatus.ACTIVE, 
-                          views: 0,
-                          link: `/events/${newId.toLowerCase()}`
-                        }, ...prev]);
-                      }
-                      setToastMessage("Lưu bài viết thành công!");
-                      setIsAddPanelOpen(false);
-                  }, 1500);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 flex items-center gap-2"
-              >
-                {isSaving && <Loader2 className="h-4 w-4 animate-spin" />} Xác nhận
-              </button>
+      {/* Popup xác nhận xóa voucher */}
+      {voucherToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setVoucherToDelete(null)} />
+          <div className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4">
+            <div className="size-12 rounded-full bg-red-100 text-red-600 mx-auto flex items-center justify-center">
+              <Trash2 className="size-6" />
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Confirm Delete Popup */}
-      {eventToDelete && (
-        <div className="fixed inset-0 z-[60] flex justify-center items-center">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setEventToDelete(null)}></div>
-          <div className="relative bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full animate-in zoom-in-95">
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Xác nhận xóa?</h3>
-            <p className="text-sm text-slate-500 mb-6">Bạn chắc chắn muốn xóa bài viết <strong>{eventToDelete.title}</strong>?</p>
-            <div className="flex gap-3 justify-end">
-              <button 
-                onClick={() => setEventToDelete(null)}
-                className="px-4 py-2 bg-slate-100 rounded-lg text-sm font-semibold hover:bg-slate-200 transition-colors"
+            <h3 className="text-base font-bold text-slate-900">Xóa Voucher {voucherToDelete.code}?</h3>
+            <p className="text-xs text-slate-500">
+              Bạn có chắc chắn muốn xóa mã ưu đãi này? Khách hàng sẽ không thể nhập mã này tại bước thanh toán cọc nữa.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setVoucherToDelete(null)}
+                className="flex-1 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Hủy
               </button>
-              <button 
-                onClick={() => {
-                  setEvents(prev => prev.filter(ev => ev.id !== eventToDelete.id));
-                  setToastMessage(`Đã xóa bài viết ${eventToDelete.id} thành công!`);
-                  setEventToDelete(null);
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 shadow-sm transition-colors"
+              <button
+                onClick={handleDeleteVoucher}
+                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold"
               >
-                Xác nhận xóa
+                Xóa voucher
               </button>
             </div>
           </div>

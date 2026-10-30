@@ -1,208 +1,344 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, Plus, Filter, MoreVertical, X, UploadCloud, AlertCircle, Loader2 } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  Filter,
+  X,
+  UploadCloud,
+  AlertCircle,
+  CheckCircle2,
+  Trash2,
+  Edit3,
+  Image as ImageIcon
+} from 'lucide-react';
 import { useAdmin } from '@/app/admin/AdminProvider';
+import { Room, RoomStatus, RoomType } from '@/app/admin/types';
 import SuccessToast from '@/components/admin/SuccessToast';
+import { formatVND } from '@/lib/rooms';
 
 export default function RoomsManagementPage() {
   const { rooms, setRooms } = useAdmin();
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
-  const [showError, setShowError] = useState(false);
-  
-  // Edit state
-  const [editingRoom, setEditingRoom] = useState<any>(null);
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+
+  // Form states theo đặc tả F5 (3.9.2)
   const [formData, setFormData] = useState({
-    id: '',
-    floor: 1,
-    type: 'Standard',
-    price: 800000,
-    status: 'EMPTY'
+    code: '',
+    floor: 3,
+    type: RoomType.DELUXE,
+    price: 1800000,
+    capacity: 3,
+    status: RoomStatus.EMPTY,
+    photoName: '',
+    photoSizeMB: 0,
+  });
+
+  // Validation error states E1 - E5
+  const [errors, setErrors] = useState({
+    code: '',
+    floor: '',
+    price: '',
+    capacity: '',
+    photo: '',
   });
 
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('Tất cả');
   const [statusFilter, setStatusFilter] = useState('Tất cả');
-
-  // Thêm state cho task 3
   const [toastMessage, setToastMessage] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [keepForm, setKeepForm] = useState(false);
-  const [fileError, setFileError] = useState(false);
-  const [roomExistsError, setRoomExistsError] = useState(false);
-  const [showConfirmPopup, setShowConfirmPopup] = useState(false);
-  const [errorToast, setErrorToast] = useState('');
-  const [roomToDelete, setRoomToDelete] = useState<any>(null);
+  const [roomToDelete, setRoomToDelete] = useState<Room | null>(null);
 
-  const checkRoomExists = () => {
-    if (editingRoom) return;
-    if (rooms.find(r => r.id === formData.id)) {
-      setRoomExistsError(true);
-    } else {
-      setRoomExistsError(false);
+  // Validation rules bám sát backend room.service.js & đặc tả 3.9 & 3.10
+  const validateForm = () => {
+    const errs = { code: '', floor: '', price: '', capacity: '', photo: '' };
+    const code = formData.code.trim().toUpperCase();
+    const floor = Number(formData.floor);
+    const price = Number(formData.price);
+    const capacity = Number(formData.capacity);
+
+    // E1: Mã phòng bắt đầu bằng 'P' + số tầng + 2 số phòng (độ dài 3-6)
+    if (!editingRoom) {
+      if (!code || code.length < 3 || code.length > 6 || !/^P\d+$/.test(code)) {
+        errs.code = 'Mã số phòng không hợp lệ (Phải bắt đầu bằng chữ "P", độ dài 3-6 ký tự, ví dụ: P302)!';
+      } else if (rooms.some((r) => r.id === code)) {
+        errs.code = 'Mã số phòng này đã tồn tại trong khách sạn (E1)!';
+      } else {
+        const prefix = Number(code.slice(1, code.length - 2));
+        if (prefix !== floor) {
+          errs.code = `Mã phòng ${code} không khớp với tầng ${floor} (Phải có dạng P${floor}xx)!`;
+        }
+      }
     }
+
+    // E2: Tầng 1 đến 15
+    if (isNaN(floor) || floor < 1 || floor > 15) {
+      errs.floor = 'Tầng khách sạn chỉ từ tầng 1 đến 15 (E2)!';
+    }
+
+    // E3: Giá từ 200,000 đến 50,000,000 VNĐ
+    if (isNaN(price) || price < 200000 || price > 50000000) {
+      errs.price = 'Giá phòng phải nằm trong khoảng từ 200,000 đến 50,000,000 VNĐ (E3)!';
+    }
+
+    // E4: Sức chứa 1 đến 8 người
+    if (isNaN(capacity) || capacity < 1 || capacity > 8) {
+      errs.capacity = 'Sức chứa phòng phải từ 1 đến 8 người (E4)!';
+    }
+
+    // E5: Tệp ảnh
+    if (formData.photoName) {
+      const isAllowedExt = /\.(jpe?g|png)$/i.test(formData.photoName);
+      if (!isAllowedExt || formData.photoSizeMB > 5) {
+        errs.photo = 'Tệp ảnh phải thuộc định dạng JPG/PNG và dung lượng dưới 5MB (E5)!';
+      }
+    }
+
+    setErrors(errs);
+    return !errs.code && !errs.floor && !errs.price && !errs.capacity && !errs.photo;
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const sizeMB = file.size / (1024 * 1024);
+      setFormData((prev) => ({
+        ...prev,
+        photoName: file.name,
+        photoSizeMB: sizeMB,
+      }));
+
+      const isAllowed = /\.(jpe?g|png)$/i.test(file.name);
+      if (!isAllowed || sizeMB > 5) {
+        setErrors((prev) => ({
+          ...prev,
+          photo: 'Tệp ảnh phải thuộc định dạng JPG/PNG và dung lượng dưới 5MB (E5)!',
+        }));
+      } else {
+        setErrors((prev) => ({ ...prev, photo: '' }));
+      }
+    }
+  };
+
+  const handleOpenAdd = () => {
+    setEditingRoom(null);
+    setFormData({
+      code: 'P305',
+      floor: 3,
+      type: RoomType.DELUXE,
+      price: 1800000,
+      capacity: 3,
+      status: RoomStatus.EMPTY,
+      photoName: 'room-deluxe.jpg',
+      photoSizeMB: 1.5,
+    });
+    setErrors({ code: '', floor: '', price: '', capacity: '', photo: '' });
+    setIsAddPanelOpen(true);
+  };
+
+  const handleOpenEdit = (room: Room) => {
+    setEditingRoom(room);
+    setFormData({
+      code: room.id,
+      floor: room.floor,
+      type: room.type,
+      price: room.price || 1200000,
+      capacity: room.capacity || 2,
+      status: room.status,
+      photoName: '',
+      photoSizeMB: 0,
+    });
+    setErrors({ code: '', floor: '', price: '', capacity: '', photo: '' });
+    setIsAddPanelOpen(true);
+  };
+
+  const handleSaveRoom = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+
+    const code = formData.code.trim().toUpperCase();
+
+    if (editingRoom) {
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.id === editingRoom.id
+            ? {
+                ...r,
+                floor: Number(formData.floor),
+                type: formData.type,
+                price: Number(formData.price),
+                capacity: Number(formData.capacity),
+                status: formData.status,
+              }
+            : r
+        )
+      );
+      setToastMessage(`Đã cập nhật cấu hình phòng ${editingRoom.id} thành công!`);
+    } else {
+      const newRoom: Room = {
+        id: code,
+        floor: Number(formData.floor),
+        type: formData.type,
+        price: Number(formData.price),
+        capacity: Number(formData.capacity),
+        status: formData.status,
+      };
+      setRooms((prev) => [...prev, newRoom]);
+      setToastMessage(`Đã thêm phòng mới ${code} vào hệ thống (F5 - S1)!`);
+    }
+
+    setIsAddPanelOpen(false);
+  };
+
+  const handleDeleteRoom = () => {
+    if (!roomToDelete) return;
+    setRooms((prev) => prev.filter((r) => r.id !== roomToDelete.id));
+    setToastMessage(`Đã xóa phòng ${roomToDelete.id} khỏi hệ thống.`);
+    setRoomToDelete(null);
   };
 
   // Filter logic
-  const filteredRooms = rooms.filter(room => {
-    const matchSearch = room.id.includes(searchQuery);
-    
-    let matchType = true;
-    if (typeFilter !== 'Tất cả') {
-      if (typeFilter === 'Suite VIP') matchType = room.type === 'Suite';
-      else matchType = room.type === typeFilter;
-    }
-
+  const filteredRooms = rooms.filter((room) => {
+    const matchSearch = room.id.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchType = typeFilter === 'Tất cả' || room.type === typeFilter;
     let matchStatus = true;
     if (statusFilter !== 'Tất cả') {
-      if (statusFilter === 'Sẵn sàng') matchStatus = room.status === 'EMPTY';
-      else if (statusFilter === 'Đang ở') matchStatus = room.status === 'OCCUPIED';
-      else if (statusFilter === 'Bảo trì') matchStatus = room.status === 'MAINTENANCE';
-      else if (statusFilter === 'Đã đặt') matchStatus = room.status === 'BOOKED';
+      if (statusFilter === 'Trống - Sạch') matchStatus = room.status === RoomStatus.EMPTY;
+      else if (statusFilter === 'Đang ở') matchStatus = room.status === RoomStatus.OCCUPIED;
+      else if (statusFilter === 'Đã đặt') matchStatus = room.status === RoomStatus.BOOKED;
+      else if (statusFilter === 'Chờ dọn (Dirty)') matchStatus = room.status === RoomStatus.CLEANING;
     }
-
     return matchSearch && matchType && matchStatus;
   });
 
-  const getStatusSelect = (room: any) => {
-    return (
-      <select 
-        value={room.status}
-        onChange={(e) => {
-          setRooms(prev => prev.map(r => r.id === room.id ? { ...r, status: e.target.value } : r));
-          setToastMessage(`Đã cập nhật trạng thái phòng ${room.id}`);
-        }}
-        className={`px-2 py-1 rounded-full text-xs font-semibold outline-none border border-transparent hover:border-slate-300 focus:border-blue-500 transition-colors ${
-          room.status === 'AVAILABLE' || room.status === 'EMPTY' ? 'bg-emerald-100 text-emerald-800' :
-          room.status === 'MAINTENANCE' ? 'bg-amber-100 text-amber-800' :
-          room.status === 'BOOKED' ? 'bg-blue-100 text-blue-800' :
-          'bg-rose-100 text-rose-800'
-        }`}
-      >
-        <option value="EMPTY">Sẵn sàng</option>
-        <option value="MAINTENANCE">Bảo trì</option>
-        <option value="BOOKED">Đã đặt</option>
-        <option value="OCCUPIED">Đang ở</option>
-      </select>
-    );
-  };
-
   return (
-    <div className="p-8 space-y-6 relative">
+    <div className="p-8 space-y-6 relative min-h-screen bg-slate-50">
       <SuccessToast message={toastMessage} onClose={() => setToastMessage('')} />
-      {errorToast && (
-        <div className="fixed top-4 right-4 z-50 animate-in fade-in slide-in-from-top-2">
-          <div className="bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2">
-            <AlertCircle className="h-5 w-5" />
-            <p className="font-semibold text-sm">{errorToast}</p>
-            <button onClick={() => setErrorToast('')} className="ml-2 hover:bg-red-600 p-1 rounded-full"><X className="h-4 w-4"/></button>
-          </div>
+
+      {/* Header & Controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+        <div>
+          <h1 className="text-xl font-black text-slate-900 tracking-tight">
+            Cấu hình Hạng phòng &amp; Giá tiêu chuẩn (F5)
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Quy tắc mã phòng chuẩn <strong className="font-mono">P&lt;Tầng&gt;xx</strong>, giá 200k-50tr, sức chứa 1-8 khách.
+          </p>
         </div>
-      )}
-      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-        <div className="flex gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Gõ số phòng để tìm nhanh..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm w-72 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <select 
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-700 outline-none"
-          >
-            <option value="Tất cả">Tất cả loại phòng</option>
-            <option value="Standard">Standard</option>
-            <option value="Superior">Superior</option>
-            <option value="Deluxe">Deluxe</option>
-            <option value="Suite VIP">Suite VIP</option>
-          </select>
-          <select 
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="border border-slate-300 rounded-lg px-4 py-2 text-sm text-slate-700 outline-none"
-          >
-            <option value="Tất cả">Tất cả trạng thái</option>
-            <option value="Sẵn sàng">Sẵn sàng (EMPTY)</option>
-            <option value="Đang ở">Đang ở (OCCUPIED)</option>
-            <option value="Đã đặt">Đã đặt (BOOKED)</option>
-            <option value="Bảo trì">Bảo trì (MAINTENANCE)</option>
-          </select>
-        </div>
-        <button 
-          onClick={() => {
-            setEditingRoom(null);
-            setFormData({ id: '', floor: 1, type: 'Standard', price: 800000, status: 'EMPTY' });
-            setIsAddPanelOpen(true);
-          }}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm shadow-blue-600/20 transition-all"
+
+        <button
+          onClick={handleOpenAdd}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
         >
-          <Plus className="h-4 w-4" /> Thêm phòng mới
+          <Plus className="size-4" /> Thêm phòng mới (+F5)
         </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <table className="w-full text-left border-collapse">
+      {/* Filter toolbar */}
+      <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 text-xs">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="size-3.5 absolute left-3 top-3 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Tìm theo mã phòng (P201, P302...)"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-lg outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="border border-slate-300 rounded-lg px-3 py-2 outline-none font-medium"
+        >
+          <option value="Tất cả">Tất cả hạng phòng</option>
+          <option value="Standard">Standard (STD)</option>
+          <option value="Superior">Superior (SUP)</option>
+          <option value="Deluxe">Deluxe (DLX)</option>
+          <option value="Suite">Suite Luxury (SUT)</option>
+        </select>
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="border border-slate-300 rounded-lg px-3 py-2 outline-none font-medium"
+        >
+          <option value="Tất cả">Tất cả trạng thái</option>
+          <option value="Trống - Sạch">Trống - Sạch (EMPTY)</option>
+          <option value="Đang ở">Đang ở (OCCUPIED)</option>
+          <option value="Đã đặt">Đã cọc (BOOKED)</option>
+          <option value="Chờ dọn (Dirty)">Chờ dọn (CLEANING)</option>
+        </select>
+      </div>
+
+      {/* Bảng danh sách phòng */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <table className="w-full text-left border-collapse text-xs">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs uppercase tracking-wider">
-              <th className="p-4 font-semibold">Số phòng</th>
-              <th className="p-4 font-semibold">Loại phòng</th>
-              <th className="p-4 font-semibold">Tầng</th>
-              <th className="p-4 font-semibold">Giá (VNĐ/Đêm)</th>
-              <th className="p-4 font-semibold">Tiện ích</th>
-              <th className="p-4 font-semibold">Trạng thái</th>
-              <th className="p-4 font-semibold text-center">Thao tác</th>
+            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+              <th className="p-4">Mã số phòng</th>
+              <th className="p-4">Hạng phòng</th>
+              <th className="p-4">Vị trí tầng</th>
+              <th className="p-4">Giá niêm yết 1 đêm</th>
+              <th className="p-4">Sức chứa</th>
+              <th className="p-4">Trạng thái</th>
+              <th className="p-4 text-center">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredRooms.length > 0 ? filteredRooms.map((room) => (
-              <tr key={room.id} className="hover:bg-slate-50/50 transition-colors">
-                <td className="p-4 font-bold text-slate-800 text-base">{room.id}</td>
-                <td className="p-4 text-slate-700 text-sm">{room.type}</td>
-                <td className="p-4 text-slate-700 text-sm">Tầng {room.floor}</td>
-                <td className="p-4 font-medium text-slate-800 text-sm">{room.type === 'Standard' ? '800.000' : room.type === 'Superior' ? '1.200.000' : room.type === 'Deluxe' ? '1.800.000' : '3.500.000'}</td>
-                <td className="p-4 text-slate-500 text-xs">Wifi, Smart TV</td>
-                <td className="p-4">{getStatusSelect(room)}</td>
-                <td className="p-4 text-center">
-                  <div className="flex gap-2 justify-center">
-                    <button 
-                      onClick={() => {
-                        setEditingRoom(room);
-                        setFormData({
-                          id: room.id,
-                          floor: room.floor || Math.floor(parseInt(room.id) / 100),
-                          type: room.type,
-                          price: room.type === 'Standard' ? 800000 : room.type === 'Superior' ? 1200000 : room.type === 'Deluxe' ? 1800000 : 3500000,
-                          status: room.status
-                        });
-                        setIsAddPanelOpen(true);
-                      }}
-                      className="px-3 py-1.5 border border-slate-200 rounded-md text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+            {filteredRooms.length > 0 ? (
+              filteredRooms.map((room) => (
+                <tr key={room.id} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="p-4 font-black font-mono text-sm text-slate-900">{room.id}</td>
+                  <td className="p-4 font-semibold text-slate-800">{room.type}</td>
+                  <td className="p-4 text-slate-600">Tầng {room.floor}</td>
+                  <td className="p-4 font-bold text-blue-700">{formatVND(room.price || 800000)}</td>
+                  <td className="p-4 text-slate-700">{room.capacity || 2} khách</td>
+                  <td className="p-4">
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                        room.status === RoomStatus.EMPTY
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : room.status === RoomStatus.OCCUPIED
+                          ? 'bg-rose-100 text-rose-800'
+                          : room.status === RoomStatus.BOOKED
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-200 text-slate-700'
+                      }`}
                     >
-                      Sửa
-                    </button>
-                    <button 
-                      onClick={() => setRoomToDelete(room)}
-                      className="px-3 py-1.5 border border-red-200 rounded-md text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      Xóa
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            )) : (
+                      {room.status === RoomStatus.EMPTY
+                        ? 'Trống - Sạch'
+                        : room.status === RoomStatus.OCCUPIED
+                        ? 'Đang có khách'
+                        : room.status === RoomStatus.BOOKED
+                        ? 'Đã cọc'
+                        : 'Chờ dọn'}
+                    </span>
+                  </td>
+                  <td className="p-4 text-center">
+                    <div className="flex gap-2 justify-center">
+                      <button
+                        onClick={() => handleOpenEdit(room)}
+                        className="px-2.5 py-1 border border-slate-300 rounded text-slate-700 hover:bg-slate-100 font-semibold"
+                      >
+                        Sửa
+                      </button>
+                      <button
+                        onClick={() => setRoomToDelete(room)}
+                        className="px-2.5 py-1 border border-red-200 rounded text-red-600 hover:bg-red-50 font-semibold"
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
               <tr>
-                <td colSpan={7} className="p-12 text-center text-slate-500">
-                  <div className="flex flex-col items-center justify-center">
-                    <Search className="h-10 w-10 text-slate-300 mb-3" />
-                    <p className="font-semibold text-slate-600">Không tìm thấy phòng nào</p>
-                    <p className="text-sm mt-1">Thử thay đổi từ khóa tìm kiếm hoặc điều kiện lọc.</p>
-                  </div>
+                <td colSpan={7} className="p-8 text-center text-slate-400">
+                  Không tìm thấy phòng nào phù hợp.
                 </td>
               </tr>
             )}
@@ -210,245 +346,229 @@ export default function RoomsManagementPage() {
         </table>
       </div>
 
-      {/* Slide Overlay */}
+      {/* Drawer Panel Thêm / Sửa cấu hình phòng */}
       {isAddPanelOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity" onClick={() => setIsAddPanelOpen(false)}></div>
-          <div className="relative w-[500px] bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => setIsAddPanelOpen(false)}
+          />
+          <div className="relative w-full max-w-lg bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
             <div className="px-6 py-5 border-b border-slate-200 flex justify-between items-center bg-white">
-              <h2 className="text-xl font-bold text-slate-800">{editingRoom ? 'Sửa thông tin phòng' : 'Thêm phòng mới'}</h2>
-              <button onClick={() => setIsAddPanelOpen(false)} className="h-8 w-8 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-500 transition-colors">
-                <X className="h-5 w-5" />
+              <h2 className="text-lg font-bold text-slate-900">
+                {editingRoom ? `Sửa thông tin phòng ${editingRoom.id}` : 'Thêm phòng vật lý mới (F5)'}
+              </h2>
+              <button
+                onClick={() => setIsAddPanelOpen(false)}
+                className="size-8 bg-slate-100 hover:bg-slate-200 rounded-full flex items-center justify-center text-slate-500"
+              >
+                <X className="size-4" />
               </button>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+
+            <form onSubmit={handleSaveRoom} className="flex-1 overflow-y-auto p-6 space-y-5">
+              {/* Mã phòng & Tầng (E1 & E2) */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-slate-700">Số phòng <span className="text-red-500">*</span></label>
-                  <input 
-                    type="text" 
-                    placeholder="VD: 502" 
-                    value={formData.id}
-                    onChange={(e) => { setFormData({...formData, id: e.target.value}); setRoomExistsError(false); }}
-                    onBlur={checkRoomExists}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Mã số phòng <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="VD: P305"
+                    value={formData.code}
                     disabled={!!editingRoom}
-                    className={`w-full px-4 py-2.5 border ${(showError || roomExistsError) ? 'border-red-500 bg-red-50' : 'border-slate-300'} rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all ${editingRoom ? 'bg-slate-100 cursor-not-allowed' : ''}`}
+                    onChange={(e) => {
+                      setFormData({ ...formData, code: e.target.value.toUpperCase() });
+                      setErrors((prev) => ({ ...prev, code: '' }));
+                    }}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs font-mono font-bold uppercase outline-none ${
+                      errors.code ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                    } ${editingRoom ? 'bg-slate-100 cursor-not-allowed' : ''}`}
                   />
-                  {(showError || roomExistsError) && <p className="text-xs text-red-500 font-medium flex items-center gap-1 mt-1"><AlertCircle className="h-3.5 w-3.5"/> Số phòng đã tồn tại.</p>}
+                  <p className="text-[10px] text-slate-400">Quy tắc: P + số tầng + số phòng (P305)</p>
+                  {errors.code && (
+                    <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="size-3" /> {errors.code}
+                    </p>
+                  )}
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-slate-700">Tầng <span className="text-red-500">*</span></label>
-                  <input 
-                    type="number" 
-                    placeholder="VD: 5" 
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Vị trí tầng (1 - 15) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={15}
                     value={formData.floor}
-                    onChange={(e) => setFormData({...formData, floor: parseInt(e.target.value) || 1})}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" 
+                    onChange={(e) => {
+                      setFormData({ ...formData, floor: parseInt(e.target.value) || 1 });
+                      setErrors((prev) => ({ ...prev, floor: '' }));
+                    }}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs font-bold outline-none ${
+                      errors.floor ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                    }`}
                   />
+                  {errors.floor && (
+                    <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="size-3" /> {errors.floor}
+                    </p>
+                  )}
                 </div>
               </div>
 
+              {/* Hạng phòng & Sức chứa (E4) */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-slate-700">Loại phòng <span className="text-red-500">*</span></label>
-                  <select 
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Tên hạng phòng <span className="text-red-500">*</span>
+                  </label>
+                  <select
                     value={formData.type}
                     onChange={(e) => {
-                      const type = e.target.value;
-                      let price = 800000;
-                      if (type === 'Superior') price = 1200000;
-                      if (type === 'Deluxe') price = 1800000;
-                      if (type === 'Suite') price = 3500000;
-                      setFormData({...formData, type, price});
+                      const t = e.target.value as RoomType;
+                      let p = 800000;
+                      let cap = 2;
+                      if (t === RoomType.SUPERIOR) { p = 1200000; cap = 2; }
+                      if (t === RoomType.DELUXE) { p = 1800000; cap = 3; }
+                      if (t === RoomType.SUITE) { p = 3500000; cap = 4; }
+                      setFormData({ ...formData, type: t, price: p, capacity: cap });
                     }}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none bg-white font-medium"
                   >
-                    <option value="Standard">Standard</option>
-                    <option value="Superior">Superior</option>
-                    <option value="Deluxe">Deluxe</option>
-                    <option value="Suite">Suite VIP</option>
+                    <option value={RoomType.STANDARD}>Standard (STD)</option>
+                    <option value={RoomType.SUPERIOR}>Superior (SUP)</option>
+                    <option value={RoomType.DELUXE}>Deluxe (DLX)</option>
+                    <option value={RoomType.SUITE}>Suite Luxury (SUT)</option>
                   </select>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-slate-700">Giá tiêu chuẩn (VNĐ) <span className="text-red-500">*</span></label>
-                  <input 
-                    type="number" 
-                    placeholder="0" 
-                    value={formData.price}
-                    onChange={(e) => setFormData({...formData, price: parseInt(e.target.value) || 0})}
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" 
-                  />
-                </div>
-              </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700">Tiện ích phòng</label>
-                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 accent-emerald-500 rounded" /> Wifi tốc độ cao
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Sức chứa tối đa (1 - 8) <span className="text-red-500">*</span>
                   </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 accent-emerald-500 rounded" /> Smart TV 55"
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 accent-emerald-500 rounded" /> Bồn tắm
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 accent-emerald-500 rounded" /> Ban công
-                  </label>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700">Hình ảnh phòng (Tối đa 5MB)</label>
-                <div 
-                  className={`relative border-2 border-dashed ${fileError ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'} rounded-xl p-8 text-center cursor-pointer transition-colors`}
-                >
-                  <input 
-                    type="file" 
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  <input
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={formData.capacity}
                     onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        if (e.target.files[0].size > 5 * 1024 * 1024) {
-                          setFileError(true);
-                        } else {
-                          setFileError(false);
-                        }
-                      }
+                      setFormData({ ...formData, capacity: parseInt(e.target.value) || 1 });
+                      setErrors((prev) => ({ ...prev, capacity: '' }));
                     }}
+                    className={`w-full px-3 py-2 border rounded-lg text-xs font-bold outline-none ${
+                      errors.capacity ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                    }`}
                   />
-                  <UploadCloud className={`h-10 w-10 mx-auto mb-3 ${fileError ? 'text-red-400' : 'text-slate-400'}`} />
-                  <p className="text-sm text-slate-600">Kéo thả ảnh vào đây hoặc <span className="text-emerald-600 font-semibold underline">Duyệt file</span></p>
-                  {fileError && <p className="text-xs text-red-500 font-medium mt-2">Tệp vượt quá 5MB. Vui lòng chọn tệp nhỏ gọn hơn.</p>}
+                  {errors.capacity && (
+                    <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle className="size-3" /> {errors.capacity}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-700">Trạng thái khởi tạo</label>
-                <div className="flex gap-6 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
-                    <input type="radio" name="status" checked={formData.status === 'EMPTY'} onChange={() => setFormData({...formData, status: 'EMPTY'})} className="w-4 h-4 accent-blue-600" /> Sẵn sàng
-                  </label>
-                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
-                    <input type="radio" name="status" checked={formData.status === 'MAINTENANCE'} onChange={() => setFormData({...formData, status: 'MAINTENANCE'})} className="w-4 h-4 accent-blue-600" /> Bảo trì
-                  </label>
-                </div>
+              {/* Giá niêm yết tiêu chuẩn (E3) */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Giá niêm yết tiêu chuẩn (VNĐ / đêm) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min={200000}
+                  max={50000000}
+                  step={50000}
+                  value={formData.price}
+                  onChange={(e) => {
+                    setFormData({ ...formData, price: Number(e.target.value) });
+                    setErrors((prev) => ({ ...prev, price: '' }));
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg text-xs font-bold text-blue-700 outline-none ${
+                    errors.price ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                  }`}
+                />
+                <p className="text-[10px] text-slate-400">Ràng buộc: 200,000 VNĐ đến 50,000,000 VNĐ / đêm</p>
+                {errors.price && (
+                  <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                    <AlertCircle className="size-3" /> {errors.price}
+                  </p>
+                )}
               </div>
-            </div>
 
-            <div className="p-6 border-t border-slate-200 bg-white">
-              <label className="flex items-center gap-2 text-sm text-slate-600 font-medium mb-4 cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={keepForm}
-                  onChange={(e) => setKeepForm(e.target.checked)}
-                  className="w-4 h-4 accent-blue-600 rounded" 
-                /> 
-                Duy trì biểu mẫu cho phòng tiếp theo
-              </label>
-              <div className="flex justify-end gap-3">
-                <button 
-                  disabled={isSaving}
+              {/* Tệp hình ảnh phòng (E5) */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Tệp hình ảnh phòng (JPG / PNG &lt;= 5MB)
+                </label>
+                <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:bg-slate-50 transition-colors relative">
+                  <UploadCloud className="size-6 text-slate-400 mx-auto mb-1" />
+                  <p className="text-xs font-medium text-slate-700">Nhấp để tải lên hình ảnh phòng</p>
+                  <p className="text-[10px] text-slate-400">Chấp nhận JPG, PNG dung lượng dưới 5MB</p>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.pdf,.exe"
+                    onChange={handlePhotoUpload}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                </div>
+                {formData.photoName && (
+                  <p className="text-xs text-blue-700 font-medium flex items-center gap-1">
+                    <ImageIcon className="size-3.5" /> Đã chọn: {formData.photoName} ({formData.photoSizeMB.toFixed(1)}MB)
+                  </p>
+                )}
+                {errors.photo && (
+                  <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                    <AlertCircle className="size-3" /> {errors.photo}
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-4 border-t flex justify-end gap-3">
+                <button
+                  type="button"
                   onClick={() => setIsAddPanelOpen(false)}
-                  className="px-6 py-2.5 bg-slate-100 text-slate-700 font-semibold rounded-lg hover:bg-slate-200 transition-colors text-sm disabled:opacity-50"
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100"
                 >
                   Hủy bỏ
                 </button>
-                <button 
-                  disabled={isSaving || roomExistsError || fileError}
-                  onClick={() => {
-                    if (!formData.id || roomExistsError || fileError) {
-                      setShowError(true);
-                      return;
-                    }
-                    setShowConfirmPopup(true);
-                  }}
-                  className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-sm transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow transition-colors"
                 >
-                  {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {editingRoom ? 'Cập nhật' : 'Thêm mới'}
+                  Lưu cấu hình phòng
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Confirm Save Popup */}
-      {showConfirmPopup && (
-        <div className="fixed inset-0 z-[60] flex justify-center items-center">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowConfirmPopup(false)}></div>
-          <div className="relative bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full animate-in zoom-in-95">
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Xác nhận lưu?</h3>
-            <p className="text-sm text-slate-500 mb-6">Bạn chắc chắn muốn lưu thông tin phòng {formData.id}?</p>
-            <div className="flex gap-3 justify-end">
-              <button 
-                onClick={() => setShowConfirmPopup(false)}
-                className="px-4 py-2 bg-slate-100 rounded-lg text-sm font-semibold hover:bg-slate-200"
-              >
-                Hủy
-              </button>
-              <button 
-                onClick={() => {
-                  setShowConfirmPopup(false);
-                  setIsSaving(true);
-                  
-                  // Simulate 50% network error after 2s loading
-                  setTimeout(() => {
-                    setIsSaving(false);
-                    const isNetworkError = Math.random() > 0.7; // 30% error
-                    if (isNetworkError) {
-                      setErrorToast("Lỗi mạng: Không thể kết nối đến máy chủ. Dữ liệu chưa bị xóa.");
-                    } else {
-                      // Success
-                      if (editingRoom) {
-                        setRooms(prev => prev.map(r => r.id === formData.id ? { ...r, ...formData } : r));
-                      } else {
-                        setRooms(prev => [...prev, { ...formData, id: formData.id } as any]);
-                      }
-                      setToastMessage("Lưu thành công!");
-                      if (!keepForm) {
-                        setIsAddPanelOpen(false);
-                      } else {
-                        // clear ID but keep form
-                        setFormData(prev => ({...prev, id: ''}));
-                      }
-                    }
-                  }, 2000);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
-              >
-                Xác nhận
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Confirm Delete Popup */}
+      {/* Popup xác nhận xóa phòng */}
       {roomToDelete && (
-        <div className="fixed inset-0 z-[60] flex justify-center items-center">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setRoomToDelete(null)}></div>
-          <div className="relative bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full animate-in zoom-in-95">
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Xác nhận xóa?</h3>
-            <p className="text-sm text-slate-500 mb-6">Bạn chắc chắn muốn xóa phòng {roomToDelete.id}?</p>
-            <div className="flex gap-3 justify-end">
-              <button 
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setRoomToDelete(null)} />
+          <div className="relative bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4">
+            <div className="size-12 rounded-full bg-red-100 text-red-600 mx-auto flex items-center justify-center">
+              <Trash2 className="size-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900">Xóa phòng {roomToDelete.id}?</h3>
+            <p className="text-xs text-slate-500">
+              Bạn có chắc chắn muốn xóa phòng này khỏi danh mục hệ thống? Hành động này không thể hoàn tác.
+            </p>
+            <div className="flex gap-2">
+              <button
                 onClick={() => setRoomToDelete(null)}
-                className="px-4 py-2 bg-slate-100 rounded-lg text-sm font-semibold hover:bg-slate-200 transition-colors"
+                className="flex-1 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Hủy
               </button>
-              <button 
-                onClick={() => {
-                  setRooms(prev => prev.filter(r => r.id !== roomToDelete.id));
-                  setToastMessage(`Đã xóa phòng ${roomToDelete.id} thành công!`);
-                  setRoomToDelete(null);
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 shadow-sm transition-colors"
+              <button
+                onClick={handleDeleteRoom}
+                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold"
               >
-                Xác nhận xóa
+                Xóa phòng
               </button>
             </div>
           </div>

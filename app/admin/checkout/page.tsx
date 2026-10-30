@@ -1,1061 +1,701 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Search, Filter, Printer, CreditCard, Banknote, Edit3, CheckCircle2, X, AlertCircle, Trash2, Mail, RefreshCw, WifiOff, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import {
+  Search,
+  Printer,
+  CreditCard,
+  Banknote,
+  QrCode,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  Coffee,
+  ShieldAlert,
+  ArrowRight,
+  FileText,
+  User,
+  Calendar,
+  Sparkles,
+  RefreshCw
+} from 'lucide-react';
 import { useAdmin } from '@/app/admin/AdminProvider';
-import { RoomStatus } from '@/app/admin/types';
-import Image from 'next/image';
+import { RoomStatus, RoomType, Booking } from '@/app/admin/types';
+import { formatVND } from '@/lib/rooms';
+
+// Danh mục Minibar tiêu chuẩn theo đặc tả F4 (3.7.2)
+const MINIBAR_PRICES = {
+  water: { name: 'Nước suối Aquafina', price: 20000 },
+  softDrink: { name: 'Nước ngọt Coca/Pepsi', price: 25000 },
+  beer: { name: 'Bia Heineken/Tiger', price: 35000 },
+  snack: { name: 'Snack khoai tây Ostar', price: 30000 },
+};
 
 export default function CheckoutPage() {
   const { rooms, setRooms, bookings, setBookings } = useAdmin();
-  const [selectedRoom, setSelectedRoom] = useState<any>(null);
-  const [showFeeForm, setShowFeeForm] = useState(false);
-  const [showInvoice, setShowInvoice] = useState(false);
-  const [checkoutComplete, setCheckoutComplete] = useState(false);
+
+  // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
-  const [showPrintInvoice, setShowPrintInvoice] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('card');
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
 
-  // State cho phí phát sinh
-  const [feeName, setFeeName] = useState('');
-  const [feeAmount, setFeeAmount] = useState('');
-  const [feeAmountError, setFeeAmountError] = useState('');
-  const [feeNameError, setFeeNameError] = useState('');
-  const [isFeeAmountTouched, setIsFeeAmountTouched] = useState(false);
-  const [isFeeNameTouched, setIsFeeNameTouched] = useState(false);
+  // Giờ check-out thực tế & Chế độ kiểm thử (Testing Surcharge Override)
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  const currentTimeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
 
-  // State cho danh sách phí phát sinh đã thêm
-  const [extraFees, setExtraFees] = useState<Array<{ id: string, name: string, amount: number }>>([]);
+  const [checkoutTimeMode, setCheckoutTimeMode] = useState<'realtime' | 'ontime' | 'late30' | 'late50' | 'late100'>('realtime');
+  const [checkoutTime, setCheckoutTime] = useState(currentTimeStr);
 
-  // State cho luồng ngoại lệ
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [showPrinterErrorPopup, setShowPrinterErrorPopup] = useState(false); // Popup lỗi máy in
-  const [showNetworkErrorPopup, setShowNetworkErrorPopup] = useState(false); // Popup lỗi mạng
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
-  const [printerErrorAction, setPrinterErrorAction] = useState<'email' | 'retry' | null>(null);
+  // Minibar inputs
+  const [minibar, setMinibar] = useState({
+    water: 0,
+    softDrink: 0,
+    beer: 0,
+    snack: 0,
+  });
+  const [minibarError, setMinibarError] = useState('');
 
-  // Ref cho ô input số tiền
-  const feeAmountInputRef = useRef<HTMLInputElement>(null);
+  // Phí bồi thường hư hại
+  const [damageFee, setDamageFee] = useState<number>(0);
+  const [damageFeeError, setDamageFeeError] = useState('');
+  const [damageReason, setDamageReason] = useState('');
 
-  // Mock function để kiểm tra máy in
-  const checkPrinterStatus = (): Promise<{ success: boolean; error?: string }> => {
-    return new Promise((resolve) => {
-      // Giả lập kiểm tra máy in - 30% khả năng lỗi
-      const random = Math.random();
-      if (random < 0.3) {
-        resolve({ success: false, error: 'Máy in đang mất kết nối mạng hoặc hết giấy' });
-      } else {
-        resolve({ success: true });
-      }
-    });
+  // Phương thức quyết toán số dư (3.7.2)
+  const [settlementMethod, setSettlementMethod] = useState<'CASH' | 'POS' | 'QR'>('CASH');
+
+  // Trạng thái hóa đơn & hoàn tất
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [checkoutCompleted, setCheckoutCompleted] = useState(false);
+
+  // Đồng bộ giờ checkout theo mode
+  useEffect(() => {
+    if (checkoutTimeMode === 'ontime') setCheckoutTime('11:45');
+    else if (checkoutTimeMode === 'late30') setCheckoutTime('13:30'); // 12:01 - 15:00
+    else if (checkoutTimeMode === 'late50') setCheckoutTime('16:15'); // 15:01 - 18:00
+    else if (checkoutTimeMode === 'late100') setCheckoutTime('19:00'); // Sau 18:00
+    else setCheckoutTime(currentTimeStr);
+  }, [checkoutTimeMode, currentTimeStr]);
+
+  // Lấy danh sách các phòng đang có khách (OCCUPIED)
+  const occupiedRooms = rooms.filter(
+    (r) => r.status === RoomStatus.OCCUPIED && r.currentBookingId
+  );
+
+  // Lọc theo tìm kiếm
+  const filteredRooms = occupiedRooms.filter((r) => {
+    const b = bookings.find((bk) => bk.id === r.currentBookingId);
+    const q = searchQuery.toLowerCase();
+    return (
+      r.id.toLowerCase().includes(q) ||
+      (b && b.guestName.toLowerCase().includes(q)) ||
+      (b && b.id.toLowerCase().includes(q))
+    );
+  });
+
+  // Chọn phòng đầu tiên nếu chưa chọn
+  useEffect(() => {
+    if (!selectedRoomId && occupiedRooms.length > 0) {
+      setSelectedRoomId(occupiedRooms[0].id);
+    }
+  }, [occupiedRooms, selectedRoomId]);
+
+  const selectedRoom = rooms.find((r) => r.id === selectedRoomId);
+  const currentBooking = selectedRoom
+    ? bookings.find((b) => b.id === selectedRoom.currentBookingId)
+    : undefined;
+
+  // Tính phụ thu trả phòng trễ (BR_F4_01)
+  const calcLateCheckoutSurcharge = () => {
+    if (!selectedRoom) return { rate: 0, fee: 0, label: 'Đúng giờ tiêu chuẩn' };
+
+    const parts = checkoutTime.split(':');
+    const h = Number(parts[0]);
+    const m = Number(parts[1] || 0);
+    const totalMinutes = h * 60 + m;
+
+    const nightPrice = selectedRoom.price || 1200000;
+
+    // Giờ trả tiêu chuẩn: 12:00 (720 phút)
+    if (totalMinutes <= 12 * 60) {
+      return { rate: 0, fee: 0, label: 'Đúng giờ tiêu chuẩn (Trước hoặc đúng 12:00 - Không phụ thu)' };
+    } else if (totalMinutes <= 15 * 60) {
+      // 12:01 - 15:00: Phụ thu 30%
+      return { rate: 0.3, fee: Math.round(nightPrice * 0.3), label: 'Trả trễ 12:01 - 15:00 (Phụ thu 30% giá phòng)' };
+    } else if (totalMinutes <= 18 * 60) {
+      // 15:01 - 18:00: Phụ thu 50%
+      return { rate: 0.5, fee: Math.round(nightPrice * 0.5), label: 'Trả trễ 15:01 - 18:00 (Phụ thu 50% giá phòng)' };
+    } else {
+      // Sau 18:00: Phụ thu 100%
+      return { rate: 1.0, fee: nightPrice, label: 'Trả trễ sau 18:00 (Phụ thu 100% giá phòng nguyên đêm)' };
+    }
   };
 
-  // Mock function để xử lý thanh toán
-  const processPayment = (): Promise<{ success: boolean; error?: string }> => {
-    return new Promise((resolve) => {
-      // Giả lập mất kết nối mạng - 20% khả năng lỗi
-      const random = Math.random();
-      if (random < 0.2) {
-        setTimeout(() => {
-          resolve({ success: false, error: 'Không thể kết nối đến máy chủ' });
-        }, 3000);
-      } else {
-        setTimeout(() => {
-          resolve({ success: true });
-        }, 1500);
-      }
-    });
-  };
+  const lateSurcharge = calcLateCheckoutSurcharge();
 
-  const occupiedRooms = rooms
-    .filter(r => r.status === RoomStatus.OCCUPIED && r.currentBookingId)
-    .map(r => {
-      const b = bookings.find(bk => bk.id === r.currentBookingId);
-      const basePrice = r.type === 'Standard' ? 800000 : r.type === 'Superior' ? 1200000 : r.type === 'Deluxe' ? 1800000 : 3500000;
-      let days = 1;
-      if (b?.checkInDate && b?.checkOutDate) {
-        try {
-          const [d1, m1, y1] = b.checkInDate.split('/');
-          const [d2, m2, y2] = b.checkOutDate.split('/');
-          const t1 = new Date(Number(y1), Number(m1) - 1, Number(d1)).getTime();
-          const t2 = new Date(Number(y2), Number(m2) - 1, Number(d2)).getTime();
-          days = Math.max(1, Math.floor((t2 - t1) / (1000 * 3600 * 24)));
-        } catch { }
-      }
-      return {
-        id: r.id,
-        type: r.type,
-        name: b ? b.guestName : 'Khách vãng lai',
-        checkIn: b ? b.checkInDate : '-',
-        checkout: b ? b.checkOutDate : '-',
-        price: basePrice,
-        days,
-        bookingId: r.currentBookingId,
-      };
-    })
-    .filter(r => r.id.includes(searchQuery));
-
-  const handleCheckoutClick = (room: any) => {
-    setSelectedRoom(room);
-    setShowFeeForm(false);
-    setShowInvoice(false);
-    setCheckoutComplete(false);
-    setShowPrinterErrorPopup(false);
-    setShowNetworkErrorPopup(false);
-    setPaymentSuccess(false);
-    setPrinterErrorAction(null);
-    setIsProcessingPayment(false);
-    // Reset form phí phát sinh
-    setFeeName('');
-    setFeeAmount('');
-    setFeeAmountError('');
-    setFeeNameError('');
-    setIsFeeAmountTouched(false);
-    setIsFeeNameTouched(false);
-    setExtraFees([]);
-  };
-
-  // Xử lý nhập phí phát sinh
-  const handleFeeAmountKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const key = e.key;
-    const allowedNavigationKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
-
-    if (allowedNavigationKeys.includes(key)) {
+  // Validate Minibar: Mỗi món 0-50, không được âm
+  const handleMinibarChange = (field: keyof typeof minibar, val: number) => {
+    if (val < 0) {
+      setMinibarError('Số lượng tiêu thụ minibar không thể là số âm (E2)!');
       return;
     }
+    setMinibarError('');
+    setMinibar((prev) => ({ ...prev, [field]: val }));
+  };
 
-    if (key === '-') {
-      e.preventDefault();
+  const handleDamageChange = (val: number) => {
+    if (val < 0) {
+      setDamageFeeError('Phí bồi thường hư hại tài sản không thể là số âm (E3)!');
       return;
     }
-
-    if (!/^[0-9]$/.test(key)) {
-      e.preventDefault();
-    }
+    setDamageFeeError('');
+    setDamageFee(val);
   };
 
-  const handleFeeAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    const numericValue = value.replace(/[^0-9]/g, '');
-    setFeeAmount(numericValue);
-    setIsFeeAmountTouched(true);
+  // Tính tổng tiền Minibar
+  const totalMinibar =
+    minibar.water * MINIBAR_PRICES.water.price +
+    minibar.softDrink * MINIBAR_PRICES.softDrink.price +
+    minibar.beer * MINIBAR_PRICES.beer.price +
+    minibar.snack * MINIBAR_PRICES.snack.price;
 
-    if (feeAmountError) {
-      setFeeAmountError('');
-    }
-  };
+  // Tiền phòng còn thiếu
+  const remainingRoomFee = currentBooking?.remainingAmount || 0;
 
-  const handleFeeAmountBlur = () => {
-    setIsFeeAmountTouched(true);
-    validateFeeAmount(feeAmount);
-  };
+  // Tiền cọc tài sản đã thu lúc Check-in
+  const securityDepositRefundable = currentBooking?.securityDeposit || 500000;
 
-  const validateFeeAmount = (amount: string) => {
-    if (!amount || amount === '') {
-      setFeeAmountError('Vui lòng nhập số tiền phát sinh');
-      return false;
-    }
+  // Công thức quyết toán:
+  // [Tổng thanh toán = Tiền phòng còn lại + Phụ thu trễ + Minibar + Bồi thường - Tiền cọc tài sản 500k]
+  const finalBalance =
+    remainingRoomFee + lateSurcharge.fee + totalMinibar + damageFee - securityDepositRefundable;
 
-    const numAmount = Number(amount);
-    if (numAmount <= 0) {
-      setFeeAmountError('Phí phát sinh phải lớn hơn 0');
-      return false;
-    }
+  const isFormValid = !minibarError && !damageFeeError;
 
-    setFeeAmountError('');
-    return true;
-  };
+  // Thực hiện Check-out
+  const handleExecuteCheckout = () => {
+    if (!selectedRoom || !currentBooking) return;
 
-  const validateFeeName = (name: string) => {
-    if (!name.trim()) {
-      setFeeNameError('Vui lòng nhập tên dịch vụ');
-      return false;
-    }
-    setFeeNameError('');
-    return true;
-  };
+    // 1. Cập nhật booking sang Checked-out
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.id === currentBooking.id
+          ? {
+              ...b,
+              status: 'Checked-out',
+              actualCheckOutTime: checkoutTime,
+              lateCheckOutFee: lateSurcharge.fee,
+              minibarUsage: minibar,
+              damageFee: damageFee,
+              finalTotal: finalBalance,
+            }
+          : b
+      )
+    );
 
-  const handleFeeNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setFeeName(value);
-    setIsFeeNameTouched(true);
-
-    if (feeNameError) {
-      setFeeNameError('');
-    }
-  };
-
-  const handleFeeNameBlur = () => {
-    setIsFeeNameTouched(true);
-    validateFeeName(feeName);
-  };
-
-  const handleAddFee = () => {
-    const isAmountValid = validateFeeAmount(feeAmount);
-    const isNameValid = validateFeeName(feeName);
-
-    if (!isAmountValid) {
-      setIsFeeAmountTouched(true);
-      if (feeAmountInputRef.current) {
-        feeAmountInputRef.current.focus();
-      }
-      return;
-    }
-
-    if (!isNameValid) {
-      setIsFeeNameTouched(true);
-      return;
-    }
-
-    const newFee = {
-      id: `fee-${Date.now()}-${Math.random()}`,
-      name: feeName.trim(),
-      amount: Number(feeAmount)
-    };
-    setExtraFees([...extraFees, newFee]);
-
-    setFeeName('');
-    setFeeAmount('');
-    setFeeAmountError('');
-    setFeeNameError('');
-    setIsFeeAmountTouched(false);
-    setIsFeeNameTouched(false);
-    setShowFeeForm(false);
-  };
-
-  const handleRemoveFee = (feeId: string) => {
-    setExtraFees(extraFees.filter(fee => fee.id !== feeId));
-  };
-
-  const handleCancelFeeForm = () => {
-    setFeeName('');
-    setFeeAmount('');
-    setFeeAmountError('');
-    setFeeNameError('');
-    setIsFeeAmountTouched(false);
-    setIsFeeNameTouched(false);
-    setShowFeeForm(false);
-  };
-
-  // Luồng ngoại lệ 2 & 3: Xử lý thanh toán
-  const handleCompletePayment = async () => {
-    setIsProcessingPayment(true);
-    setShowNetworkErrorPopup(false);
-    setShowPrinterErrorPopup(false);
-
-    try {
-      // Bước 1: Xử lý thanh toán (có thể bị lỗi mạng)
-      const paymentResult = await processPayment();
-
-      if (!paymentResult.success) {
-        // Luồng ngoại lệ 3 - Mất kết nối mạng - Mở POPUP riêng
-        setIsProcessingPayment(false);
-        setShowNetworkErrorPopup(true);
-        return;
-      }
-
-      // Bước 2: Cập nhật trạng thái phòng và booking
-      setRooms(prev => prev.map(r =>
+    // 2. Chuyển phòng sang CLEANING (Dirty) và giải phóng booking
+    setRooms((prev) =>
+      prev.map((r) =>
         r.id === selectedRoom.id
-          ? { ...r, status: RoomStatus.CLEANING, currentBookingId: undefined }
+          ? {
+              ...r,
+              status: RoomStatus.CLEANING,
+              currentBookingId: undefined,
+            }
           : r
-      ));
-      setBookings(prev => prev.map(b =>
-        b.id === selectedRoom.bookingId ? { ...b, roomNumber: undefined } : b
-      ));
+      )
+    );
 
-      setPaymentSuccess(true);
-      setCheckoutComplete(true);
-      setIsProcessingPayment(false);
-
-      // Bước 3: Kiểm tra máy in trước khi in - Mở POPUP riêng nếu lỗi
-      const printerStatus = await checkPrinterStatus();
-
-      if (!printerStatus.success) {
-        // Luồng ngoại lệ 2 - Lỗi máy in - Mở POPUP riêng
-        setShowPrinterErrorPopup(true);
-        return;
-      }
-
-      // In thành công - hiển thị success bình thường
-
-    } catch (error) {
-      setIsProcessingPayment(false);
-      setShowNetworkErrorPopup(true);
-    }
-  };
-
-  // Xử lý gửi email từ lỗi máy in
-  const handleSendEmail = () => {
-    setPrinterErrorAction('email');
-    // Giả lập gửi email
-    setTimeout(() => {
-      alert('📧 Đã gửi hóa đơn qua email cho khách hàng!');
-      setShowPrinterErrorPopup(false);
-      setPrinterErrorAction(null);
-    }, 1000);
-  };
-
-  // Xử lý thử in lại
-  const handleRetryPrint = async () => {
-    setPrinterErrorAction('retry');
-    const printerStatus = await checkPrinterStatus();
-
-    setTimeout(() => {
-      if (printerStatus.success) {
-        alert('🖨️ In hóa đơn thành công!');
-        setShowPrinterErrorPopup(false);
-      } else {
-        alert('❌ Máy in vẫn đang gặp sự cố. Vui lòng kiểm tra lại kết nối và giấy in.');
-      }
-      setPrinterErrorAction(null);
-    }, 1000);
-  };
-
-  // Tính tổng tiền bao gồm cả phí phát sinh
-  const totalExtraFees = extraFees.reduce((sum, fee) => sum + fee.amount, 0);
-  const baseTotal = selectedRoom ? (selectedRoom.price * selectedRoom.days) : 0;
-  const serviceFees = 490000;
-  const lateFee = 300000;
-  const deposit = 1000000;
-  const totalAmount = selectedRoom
-    ? baseTotal + serviceFees + lateFee + totalExtraFees - deposit
-    : 0;
-
-  const isPaymentDisabled = () => {
-    return (feeAmountError && isFeeAmountTouched && showFeeForm) ||
-      (feeNameError && isFeeNameTouched && showFeeForm) ||
-      isProcessingPayment;
-  };
-
-  const handlePrint = () => {
-    const el = document.getElementById('invoice-print');
-    if (!el) return;
-
-    const win = window.open('', '_blank', 'width=860,height=750');
-    if (!win) {
-      alert('Trình duyệt đã chặn popup. Vui lòng cho phép popup để in hóa đơn.');
-      return;
-    }
-
-    win.document.write(`
-      <!DOCTYPE html>
-      <html lang="vi">
-        <head>
-          <meta charset="UTF-8" />
-          <title>Hóa đơn</title>
-          <style>
-            *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 40px; background: #fff; color: #1e293b; }
-            img { max-width: 100%; height: auto; display: block; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { padding: 10px 14px; }
-            .divide-y tr + tr td { border-top: 1px solid #f1f5f9; }
-            .bg-slate-100 { background: #f1f5f9; }
-            .text-rose-600 { color: #e11d48; }
-            .text-emerald-600 { color: #059669; }
-            .text-blue-600 { color: #2563eb; }
-            .text-slate-400 { color: #94a3b8; }
-            .text-slate-500 { color: #64748b; }
-            .text-slate-600 { color: #475569; }
-            .text-slate-800 { color: #1e293b; }
-            .font-bold { font-weight: 700; }
-            .font-semibold { font-weight: 600; }
-            .font-black { font-weight: 900; }
-            .italic { font-style: italic; }
-            .text-xs { font-size: 11px; }
-            .text-sm { font-size: 13px; }
-            .text-lg { font-size: 17px; }
-            .text-xl { font-size: 19px; }
-            .text-2xl { font-size: 22px; }
-            .uppercase { text-transform: uppercase; }
-            .tracking-widest { letter-spacing: 4px; }
-            .tracking-wider { letter-spacing: 1px; }
-            .border-b-2 { border-bottom: 2px solid #1e293b; }
-            .border-t-2 { border-top: 2px solid #1e293b; }
-            .border-t { border-top: 1px solid #e2e8f0; }
-            .pb-6 { padding-bottom: 24px; }
-            .mb-8 { margin-bottom: 32px; }
-            .mb-3 { margin-bottom: 12px; }
-            .mb-2 { margin-bottom: 8px; }
-            .mb-12 { margin-bottom: 48px; }
-            .mb-16 { margin-bottom: 64px; }
-            .mt-1 { margin-top: 4px; }
-            .mt-10 { margin-top: 40px; }
-            .pt-3 { padding-top: 12px; }
-            .pt-5 { padding-top: 20px; }
-            .pt-8 { padding-top: 32px; }
-            .py-3 { padding-top: 12px; padding-bottom: 12px; }
-            .py-4 { padding-top: 16px; padding-bottom: 16px; }
-            .px-4 { padding-left: 16px; padding-right: 16px; }
-            .p-10 { padding: 40px; }
-            .w-72 { width: 288px; }
-            .text-right { text-align: right; }
-            .text-center { text-align: center; }
-            .text-left { text-align: left; }
-            .flex { display: flex; }
-            .justify-between { justify-content: space-between; }
-            .justify-end { justify-content: flex-end; }
-            .items-center { align-items: center; }
-            .items-start { align-items: flex-start; }
-            .grid-cols-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-            .space-y-3 > * + * { margin-top: 12px; }
-          </style>
-        </head>
-        <body>
-          ${el.innerHTML}
-          <script>window.onload = function(){ window.print(); };<\/script>
-        </body>
-      </html>
-    `);
-    win.document.close();
+    setShowInvoiceModal(true);
   };
 
   return (
-    <div className="p-8 space-y-6">
-
+    <div className="flex-1 space-y-6 p-8 bg-slate-50 min-h-screen">
       {/* Header */}
-      <div className="flex flex-wrap justify-between items-center gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Quản lý Check-out</h2>
-          <p className="text-sm text-slate-500 mt-1">Chọn phòng đang có khách để tiến hành thanh toán và trả phòng.</p>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+            Xử lý Trả phòng &amp; Quyết toán Hóa đơn (Check-out - F4)
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Khấu trừ tiền cọc, kiểm kê minibar, tính phụ thu giờ trả trễ và xuất hóa đơn tài chính VAT.
+          </p>
         </div>
-        <div className="flex gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Tìm theo số phòng..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-56 transition-all"
-            />
-          </div>
-          <button className="flex items-center gap-2 border border-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors text-slate-700">
-            <Filter className="h-4 w-4" /> Lọc phòng
-          </button>
+
+        {/* Thanh tìm kiếm nhanh */}
+        <div className="relative w-full md:w-80">
+          <Search className="size-4 absolute left-3 top-3 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Tìm theo số phòng, tên khách, PNR..."
+            className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 py-2 text-xs outline-none focus:border-blue-500 shadow-sm"
+          />
         </div>
       </div>
 
-      {/* Room Grid */}
-      {occupiedRooms.length === 0 ? (
-        <div className="text-center py-20 text-slate-400">
-          <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-slate-300" />
-          <p className="font-medium">Không có phòng nào cần check-out</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-          {occupiedRooms.map(room => (
-            <div key={room.id} className="bg-white border-2 border-rose-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all">
-              <div className="flex justify-between items-start mb-4">
-                <span className="text-2xl font-black text-rose-600">{room.id}</span>
-                <span className="px-2.5 py-1 bg-rose-100 text-rose-700 text-xs font-bold rounded-full">Đang ở</span>
-              </div>
-              <div className="space-y-1.5 mb-5 text-sm">
-                <p className="text-slate-700"><span className="text-slate-400">Khách:</span> <span className="font-semibold">{room.name}</span></p>
-                <p className="text-slate-500">Vào: {room.checkIn}</p>
-                <p className="text-slate-500">Ra (dự kiến): {room.checkout}</p>
-              </div>
-              <button
-                onClick={() => handleCheckoutClick(room)}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors shadow-sm"
-              >
-                Tiến hành Check-out
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Cột trái (4 cột): Danh sách phòng đang lưu trú (Occupied) */}
+        <div className="lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-800">
+              Phòng đang có khách ({filteredRooms.length})
+            </h3>
+            <span className="text-[11px] font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">
+              Occupied
+            </span>
+          </div>
 
-      {/* Checkout Modal */}
-      {selectedRoom && !checkoutComplete && !showPrinterErrorPopup && !showNetworkErrorPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setSelectedRoom(null)} />
-
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-white shrink-0">
-              <h3 className="text-lg font-bold text-slate-800">
-                Thủ tục Check-out — Phòng <span className="text-blue-600">{selectedRoom.id}</span>
-              </h3>
-              <button onClick={() => setSelectedRoom(null)} className="text-slate-400 hover:bg-slate-100 p-1.5 rounded-full transition-colors">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-              <div className="flex flex-col md:flex-row gap-6">
-
-                {/* Left: Info + Fees */}
-                <div className="flex-[3] space-y-5">
-
-                  {/* Thông tin lưu trú */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                    <h4 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 text-sm uppercase tracking-wide">Thông tin lưu trú</h4>
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                      <div>
-                        <p className="text-slate-400 text-xs mb-0.5">Khách hàng</p>
-                        <p className="font-semibold text-slate-800">{selectedRoom.name}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-400 text-xs mb-0.5">Loại phòng</p>
-                        <p className="font-semibold text-slate-800">{selectedRoom.type}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-400 text-xs mb-0.5">Nhận phòng</p>
-                        <p className="font-semibold text-slate-800">{selectedRoom.checkIn}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-400 text-xs mb-0.5">Trả phòng</p>
-                        <p className="font-semibold text-slate-800">{selectedRoom.checkout}</p>
-                      </div>
+          <div className="space-y-2.5 max-h-[620px] overflow-y-auto pr-1">
+            {filteredRooms.length > 0 ? (
+              filteredRooms.map((r) => {
+                const b = bookings.find((bk) => bk.id === r.currentBookingId);
+                const isSelected = r.id === selectedRoomId;
+                return (
+                  <div
+                    key={r.id}
+                    onClick={() => {
+                      setSelectedRoomId(r.id);
+                      setMinibar({ water: 0, softDrink: 0, beer: 0, snack: 0 });
+                      setDamageFee(0);
+                    }}
+                    className={`cursor-pointer rounded-xl border p-3.5 transition-all ${
+                      isSelected
+                        ? 'border-blue-600 bg-blue-50/60 shadow-sm ring-1 ring-blue-600'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-mono text-base font-black text-slate-900">
+                        {r.id}
+                      </span>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                        {r.type}
+                      </span>
                     </div>
-                    <div className="mt-4 flex items-center gap-2 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2 text-sm text-rose-600">
-                      <AlertCircle className="h-4 w-4 shrink-0" />
-                      <span>Đã quá giờ trả phòng 120 phút — phụ phí tự động tính</span>
+                    <p className="text-xs font-bold text-slate-800 truncate">
+                      {b ? b.guestName : 'Khách lưu trú'}
+                    </p>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
+                      <span>Mã: <strong className="font-mono">{b ? b.id : '---'}</strong></span>
+                      <span>Kỳ: {b?.checkInDate} → {b?.checkOutDate}</span>
                     </div>
                   </div>
+                );
+              })
+            ) : (
+              <div className="p-8 text-center text-xs text-slate-400 border border-dashed rounded-xl">
+                Không tìm thấy phòng Occupied phù hợp.
+              </div>
+            )}
+          </div>
+        </div>
 
-                  {/* Dịch vụ & Phụ phí */}
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                    <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
-                      <h4 className="font-bold text-slate-800 text-sm uppercase tracking-wide">Dịch vụ & Phụ phí</h4>
-                      {!showFeeForm && (
-                        <button
-                          onClick={() => {
-                            setShowFeeForm(true);
-                            setFeeAmountError('');
-                            setFeeNameError('');
-                            setIsFeeAmountTouched(false);
-                            setIsFeeNameTouched(false);
-                          }}
-                          className="text-blue-600 hover:text-blue-700 text-sm font-semibold flex items-center gap-1"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" /> Thêm phí
-                        </button>
-                      )}
-                    </div>
-                    <div className="space-y-3 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-slate-600">Nước suối x2</span>
-                        <span className="font-medium text-slate-800">40.000đ</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-600">Giặt ủi</span>
-                        <span className="font-medium text-slate-800">150.000đ</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-rose-600 font-medium">Phụ thu trả phòng trễ</span>
-                        <span className="font-bold text-rose-600">300.000đ</span>
-                      </div>
+        {/* Cột phải (8 cột): Chi tiết quyết toán */}
+        {selectedRoom && currentBooking ? (
+          <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">
+                  Quyết toán phòng lưu trú
+                </span>
+                <h2 className="text-xl font-black text-slate-900">
+                  Phòng {selectedRoom.id} • {selectedRoom.type}
+                </h2>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-slate-500 block">Khách hàng lưu trú:</span>
+                <span className="font-bold text-slate-800 text-sm">{currentBooking.guestName}</span>
+                <span className="text-xs text-slate-400 block font-mono">CCCD: {currentBooking.cccd}</span>
+              </div>
+            </div>
 
-                      {/* Hiển thị phí phát sinh đã thêm với nút xóa */}
-                      {extraFees.map((fee) => (
-                        <div key={fee.id} className="flex justify-between items-center border-t border-slate-100 pt-2">
-                          <span className="text-slate-600">{fee.name}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-slate-800">{fee.amount.toLocaleString('vi-VN')}đ</span>
-                            <button
-                              onClick={() => handleRemoveFee(fee.id)}
-                              className="text-red-400 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-red-50"
-                              title="Xóa phí này"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+            {/* 1. Bộ chọn nhanh kiểm thử phụ thu trả trễ (BR_F4_01) */}
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                  <Clock className="size-3.5" /> Chính sách phụ thu trả trễ (Late Check-out)
+                </span>
+                <span className="font-mono text-xs font-bold text-amber-800 bg-white px-2 py-0.5 rounded border border-amber-200">
+                  Giờ trả phòng: {checkoutTime}
+                </span>
+              </div>
+              <p className="text-xs text-amber-800 mb-3">
+                {lateSurcharge.label}: <strong>{formatVND(lateSurcharge.fee)}</strong>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCheckoutTimeMode('realtime')}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-all ${
+                    checkoutTimeMode === 'realtime'
+                      ? 'bg-amber-600 text-white shadow'
+                      : 'bg-white text-amber-900 border border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  Giờ thực tế ({currentTimeStr})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCheckoutTimeMode('ontime')}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-all ${
+                    checkoutTimeMode === 'ontime'
+                      ? 'bg-amber-600 text-white shadow'
+                      : 'bg-white text-amber-900 border border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  Trước 12:00 (0đ)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCheckoutTimeMode('late30')}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-all ${
+                    checkoutTimeMode === 'late30'
+                      ? 'bg-amber-600 text-white shadow'
+                      : 'bg-white text-amber-900 border border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  12:01 - 15:00 (+30%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCheckoutTimeMode('late50')}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-all ${
+                    checkoutTimeMode === 'late50'
+                      ? 'bg-amber-600 text-white shadow'
+                      : 'bg-white text-amber-900 border border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  15:01 - 18:00 (+50%)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCheckoutTimeMode('late100')}
+                  className={`px-2.5 py-1 text-xs rounded font-medium transition-all ${
+                    checkoutTimeMode === 'late100'
+                      ? 'bg-amber-600 text-white shadow'
+                      : 'bg-white text-amber-900 border border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  Sau 18:00 (+100%)
+                </button>
+              </div>
+            </div>
 
-                    {/* Form thêm phí phát sinh */}
-                    {showFeeForm && (
-                      <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mt-4 animate-in slide-in-from-top-2">
-                        <p className="text-sm font-semibold text-slate-700 mb-3">Thêm khoản phí mới</p>
-                        <div className="grid grid-cols-2 gap-3 mb-3">
-                          <div>
-                            <input
-                              type="text"
-                              placeholder="Tên dịch vụ / phí..."
-                              value={feeName}
-                              onChange={handleFeeNameChange}
-                              onBlur={handleFeeNameBlur}
-                              className={`w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors ${feeNameError && isFeeNameTouched ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'
-                                }`}
-                            />
-                            {feeNameError && isFeeNameTouched && (
-                              <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
-                                <AlertCircle className="h-3 w-3" />
-                                {feeNameError}
-                              </p>
-                            )}
-                          </div>
-                          <div>
-                            <input
-                              ref={feeAmountInputRef}
-                              type="text"
-                              placeholder="Số tiền (đ)..."
-                              value={feeAmount}
-                              onChange={handleFeeAmountChange}
-                              onKeyPress={handleFeeAmountKeyPress}
-                              onBlur={handleFeeAmountBlur}
-                              className={`w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors ${feeAmountError && isFeeAmountTouched ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'
-                                }`}
-                            />
-                            {feeAmountError && isFeeAmountTouched && (
-                              <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
-                                <AlertCircle className="h-3 w-3" />
-                                {feeAmountError}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={handleCancelFeeForm}
-                            className="text-slate-500 hover:text-slate-700 text-sm font-medium px-3 py-1.5 rounded-lg"
-                          >
-                            Hủy
-                          </button>
-                          <button
-                            onClick={handleAddFee}
-                            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg shadow transition-colors"
-                          >
-                            Thêm vào hóa đơn
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+            {/* 2. Kiểm kê Minibar tiêu thụ */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <Coffee className="size-3.5" /> Kiểm kê Minibar phòng (0 - 50 món)
+                </h4>
+                <span className="text-xs font-bold text-slate-800">
+                  Tổng Minibar: {formatVND(totalMinibar)}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Nước suối */}
+                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                  <p className="text-xs font-bold text-slate-800">Nước suối</p>
+                  <p className="text-[10px] text-slate-500 mb-2">20,000đ/chai</p>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={minibar.water}
+                    onChange={(e) => handleMinibarChange('water', Number(e.target.value))}
+                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold outline-none"
+                  />
                 </div>
 
-                {/* Right: Payment */}
-                <div className="flex-[2]">
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm h-full flex flex-col">
-                    <h4 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 text-sm uppercase tracking-wide">Chi tiết thanh toán</h4>
-
-                    <div className="space-y-3 text-sm flex-1">
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-500">Tiền phòng ({selectedRoom.days} đêm)</span>
-                        <span className="font-semibold text-slate-800">{(selectedRoom.price * selectedRoom.days).toLocaleString('vi-VN')}đ</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-500">Dịch vụ & Phụ phí</span>
-                        <span className="font-semibold text-slate-800">{(serviceFees + lateFee).toLocaleString('vi-VN')}đ</span>
-                      </div>
-                      {extraFees.map((fee) => (
-                        <div key={fee.id} className="flex justify-between items-center">
-                          <span className="text-slate-500">{fee.name}</span>
-                          <span className="font-semibold text-slate-800">{fee.amount.toLocaleString('vi-VN')}đ</span>
-                        </div>
-                      ))}
-                      <div className="flex justify-between items-center">
-                        <span className="text-emerald-600">Đã cọc trước</span>
-                        <span className="font-semibold text-emerald-600">-1.000.000đ</span>
-                      </div>
-                    </div>
-
-                    {/* Total */}
-                    <div className="mt-5 pt-4 border-t border-slate-200">
-                      <div className="flex justify-between items-center mb-5">
-                        <span className="font-bold text-slate-700">Cần thanh toán</span>
-                        <span className="text-2xl font-black text-blue-600 whitespace-nowrap">
-                          {totalAmount.toLocaleString('vi-VN')}đ
-                        </span>
-                      </div>
-
-                      {!showInvoice ? (
-                        <div className="space-y-3">
-                          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Phương thức thanh toán</p>
-                          <div className="grid grid-cols-2 gap-3">
-                            <button
-                              onClick={() => setPaymentMethod('card')}
-                              disabled={isProcessingPayment}
-                              className={`flex flex-col items-center justify-center p-3 border-2 rounded-xl transition-colors text-sm ${paymentMethod === 'card' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-600'
-                                } ${isProcessingPayment ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            >
-                              <CreditCard className="h-5 w-5 mb-1" />
-                              <span className="text-xs font-bold">Thẻ / CK</span>
-                            </button>
-                            <button
-                              onClick={() => setPaymentMethod('cash')}
-                              disabled={isProcessingPayment}
-                              className={`flex flex-col items-center justify-center p-3 border-2 rounded-xl transition-colors text-sm ${paymentMethod === 'cash' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-600'
-                                } ${isProcessingPayment ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            >
-                              <Banknote className="h-5 w-5 mb-1" />
-                              <span className="text-xs font-bold">Tiền mặt</span>
-                            </button>
-                          </div>
-                          <button
-                            onClick={() => setShowInvoice(true)}
-                            disabled={isPaymentDisabled()}
-                            className={`w-full mt-2 font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow text-white ${isPaymentDisabled()
-                              ? 'bg-slate-300 cursor-not-allowed hover:bg-slate-300'
-                              : 'bg-slate-800 hover:bg-slate-900'
-                              }`}
-                          >
-                            <Printer className="h-4 w-4" />
-                            Xem trước hóa đơn
-                          </button>
-                          {isPaymentDisabled() && (
-                            <p className="text-red-500 text-xs text-center">
-                              Vui lòng nhập đầy đủ thông tin phí phát sinh để tiếp tục
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex gap-2 text-amber-800 text-sm">
-                            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                            <p>Xác nhận thanh toán để hoàn tất Check-out.</p>
-                          </div>
-
-                          <div className="flex gap-3">
-                            <button
-                              onClick={() => setShowInvoice(false)}
-                              disabled={isProcessingPayment}
-                              className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 font-semibold rounded-xl hover:bg-slate-200 transition-colors text-sm"
-                            >
-                              Quay lại
-                            </button>
-                            <button
-                              onClick={handleCompletePayment}
-                              disabled={isProcessingPayment}
-                              className={`flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-sm transition-colors text-sm flex items-center justify-center gap-2 ${isProcessingPayment ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            >
-                              {isProcessingPayment ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                  Đang xử lý...
-                                </>
-                              ) : (
-                                <>
-                                  <CheckCircle2 className="h-4 w-4" /> Hoàn tất
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                {/* Nước ngọt */}
+                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                  <p className="text-xs font-bold text-slate-800">Nước ngọt</p>
+                  <p className="text-[10px] text-slate-500 mb-2">25,000đ/lon</p>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={minibar.softDrink}
+                    onChange={(e) => handleMinibarChange('softDrink', Number(e.target.value))}
+                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold outline-none"
+                  />
                 </div>
 
+                {/* Bia */}
+                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                  <p className="text-xs font-bold text-slate-800">Bia lon</p>
+                  <p className="text-[10px] text-slate-500 mb-2">35,000đ/lon</p>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={minibar.beer}
+                    onChange={(e) => handleMinibarChange('beer', Number(e.target.value))}
+                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold outline-none"
+                  />
+                </div>
+
+                {/* Snack */}
+                <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                  <p className="text-xs font-bold text-slate-800">Snack</p>
+                  <p className="text-[10px] text-slate-500 mb-2">30,000đ/gói</p>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={minibar.snack}
+                    onChange={(e) => handleMinibarChange('snack', Number(e.target.value))}
+                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              {minibarError && (
+                <p className="text-xs text-red-600 font-medium flex items-center gap-1">
+                  <AlertCircle className="size-3.5" /> {minibarError}
+                </p>
+              )}
+            </div>
+
+            {/* 3. Phí bồi thường hư hại tài sản */}
+            <div className="space-y-2 border-t border-slate-100 pt-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <ShieldAlert className="size-3.5" /> Bồi thường hư hại tài sản (nếu có)
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] text-slate-500 block mb-1">Số tiền bồi thường (VNĐ):</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={50000}
+                    value={damageFee}
+                    onChange={(e) => handleDamageChange(Number(e.target.value))}
+                    placeholder="0"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold outline-none focus:border-blue-500"
+                  />
+                  {damageFeeError && (
+                    <p className="text-xs text-red-600 font-medium mt-1">{damageFeeError}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-500 block mb-1">Ghi chú biên bản buồng phòng:</label>
+                  <input
+                    type="text"
+                    value={damageReason}
+                    onChange={(e) => setDamageReason(e.target.value)}
+                    placeholder="VD: Làm vỡ cốc thủy tinh, rách khăn tắm..."
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* POPUP: Lỗi máy in - Luồng ngoại lệ 2 */}
-      {showPrinterErrorPopup && selectedRoom && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowPrinterErrorPopup(false)} />
-
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in fade-in zoom-in-95 duration-200">
-            <button
-              onClick={() => setShowPrinterErrorPopup(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:bg-slate-100 p-1.5 rounded-full transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <div className="flex flex-col items-center">
-              <div className="w-20 h-20 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mb-5">
-                <AlertCircle className="h-10 w-10" />
+            {/* 4. Bảng tính toán tổng quyết toán tài chính */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 space-y-2.5 text-sm">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 border-b pb-2">
+                Bảng tính quyết toán thanh lý (Settle Bill):
+              </h4>
+              <div className="flex justify-between text-slate-600">
+                <span>Tiền phòng còn thiếu (nếu mới cọc 50%):</span>
+                <span className="font-semibold text-slate-800">{formatVND(remainingRoomFee)}</span>
+              </div>
+              {lateSurcharge.fee > 0 && (
+                <div className="flex justify-between text-amber-700 font-medium">
+                  <span>Phụ thu trả phòng trễ ({checkoutTime}):</span>
+                  <span>+{formatVND(lateSurcharge.fee)}</span>
+                </div>
+              )}
+              {totalMinibar > 0 && (
+                <div className="flex justify-between text-slate-600 font-medium">
+                  <span>Chi phí tiêu thụ Minibar:</span>
+                  <span>+{formatVND(totalMinibar)}</span>
+                </div>
+              )}
+              {damageFee > 0 && (
+                <div className="flex justify-between text-rose-700 font-medium">
+                  <span>Phí đền bù hư hại tài sản:</span>
+                  <span>+{formatVND(damageFee)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-blue-700 font-medium">
+                <span>Khấu trừ tiền cọc tài sản đảm bảo:</span>
+                <span>-{formatVND(securityDepositRefundable)}</span>
               </div>
 
-              <h3 className="text-xl font-bold text-slate-800 mb-2 text-center">Lỗi máy in</h3>
-              <p className="text-slate-500 text-center text-sm mb-6">
-                Phòng <span className="font-semibold text-slate-700">{selectedRoom.id}</span> đã check-out thành công.<br />
-                Tuy nhiên máy in đang gặp sự cố (mất kết nối mạng hoặc hết giấy).
-              </p>
-
-              <div className="w-full bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
-                <p className="text-xs text-amber-700 text-center">
-                  ⚠️ Hóa đơn chưa được in. Vui lòng chọn một trong các tùy chọn bên dưới.
-                </p>
+              {/* Kết quả ròng */}
+              <div className="border-t border-slate-200 pt-3 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
+                    {finalBalance >= 0 ? 'Số dư thu thêm từ khách (COLLECT):' : 'Hoàn trả cọc thừa cho khách (REFUND):'}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {finalBalance >= 0 ? 'Khách hàng thanh toán thêm' : 'Lễ tân trả lại tiền mặt/chuyển khoản cho khách'}
+                  </span>
+                </div>
+                <div className={`text-2xl font-black ${finalBalance >= 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  {formatVND(Math.abs(finalBalance))}
+                </div>
               </div>
+            </div>
 
-              <div className="flex gap-3 w-full">
-                <button
-                  onClick={handleSendEmail}
-                  disabled={printerErrorAction === 'email'}
-                  className="flex-1 px-4 py-3 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            {/* 5. Phương thức quyết toán số dư */}
+            <div className="space-y-2 border-t pt-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block">
+                Hình thức quyết toán số dư:
+              </label>
+              <div className="flex flex-wrap gap-3">
+                <label
+                  onClick={() => setSettlementMethod('CASH')}
+                  className={`flex items-center gap-2 cursor-pointer border rounded-lg px-4 py-2.5 text-xs font-semibold ${
+                    settlementMethod === 'CASH'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
                 >
-                  {printerErrorAction === 'email' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Mail className="h-4 w-4" />
-                  )}
-                  Gửi Email
-                </button>
-                <button
-                  onClick={handleRetryPrint}
-                  disabled={printerErrorAction === 'retry'}
-                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  <Banknote className="size-4" /> Tiền mặt
+                </label>
+                <label
+                  onClick={() => setSettlementMethod('POS')}
+                  className={`flex items-center gap-2 cursor-pointer border rounded-lg px-4 py-2.5 text-xs font-semibold ${
+                    settlementMethod === 'POS'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
                 >
-                  {printerErrorAction === 'retry' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                  Thử in lại
-                </button>
+                  <CreditCard className="size-4" /> Quẹt thẻ POS
+                </label>
+                <label
+                  onClick={() => setSettlementMethod('QR')}
+                  className={`flex items-center gap-2 cursor-pointer border rounded-lg px-4 py-2.5 text-xs font-semibold ${
+                    settlementMethod === 'QR'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <QrCode className="size-4" /> Chuyển khoản QR
+                </label>
               </div>
+            </div>
 
+            {/* Nút hành động */}
+            <div className="flex items-center justify-end gap-3 pt-4 border-t">
               <button
-                onClick={() => setShowPrinterErrorPopup(false)}
-                className="mt-4 text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors"
+                type="button"
+                onClick={handleExecuteCheckout}
+                disabled={!isFormValid}
+                className={`flex items-center gap-2 rounded-xl px-8 py-3.5 text-sm font-bold text-white shadow-md transition-all ${
+                  isFormValid
+                    ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
+                    : 'bg-slate-300 cursor-not-allowed'
+                }`}
               >
-                Đóng
+                <CheckCircle2 className="size-5" /> Hoàn tất Check-out &amp; In hóa đơn VAT
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* POPUP: Lỗi mạng - Luồng ngoại lệ 3 */}
-      {showNetworkErrorPopup && selectedRoom && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowNetworkErrorPopup(false)} />
-
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 animate-in fade-in zoom-in-95 duration-200">
-            <button
-              onClick={() => setShowNetworkErrorPopup(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:bg-slate-100 p-1.5 rounded-full transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <div className="flex flex-col items-center">
-              <div className="w-20 h-20 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-5">
-                <WifiOff className="h-10 w-10" />
-              </div>
-
-              <h3 className="text-xl font-bold text-slate-800 mb-2 text-center">Mất kết nối mạng</h3>
-              <p className="text-slate-500 text-center text-sm mb-4">
-                Không thể kết nối đến máy chủ. Giao dịch chưa được ghi nhận.
-              </p>
-
-              <div className="w-full bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
-                <p className="text-xs text-red-700 text-center">
-                  ⚠️ Vui lòng kiểm tra lại đường truyền mạng và thử lại.<br />
-                  Mọi dữ liệu đã nhập vẫn được giữ nguyên.
-                </p>
-              </div>
-
-              <div className="flex gap-3 w-full">
-                <button
-                  onClick={() => {
-                    setShowNetworkErrorPopup(false);
-                    // Mở lại modal checkout với dữ liệu cũ
-                    setShowInvoice(true);
-                  }}
-                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2 transition-colors"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                  Thử lại
-                </button>
-                <button
-                  onClick={() => {
-                    setShowNetworkErrorPopup(false);
-                    setSelectedRoom(null);
-                    setShowInvoice(false);
-                  }}
-                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-sm transition-colors"
-                >
-                  Hủy
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Success Modal (In thành công) */}
-      {checkoutComplete && !showPrinterErrorPopup && !showNetworkErrorPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white p-8 rounded-2xl flex flex-col items-center animate-in zoom-in-95 duration-300 shadow-2xl max-w-sm w-full mx-4">
-            <div className="w-20 h-20 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mb-5">
-              <CheckCircle2 className="h-10 w-10" />
-            </div>
-            <h3 className="text-xl font-bold text-slate-800 mb-2">Check-out thành công!</h3>
-            <p className="text-slate-500 text-center text-sm mb-6">
-              Phòng <span className="font-semibold text-slate-700">{selectedRoom?.id}</span> đã chuyển sang chờ dọn dẹp.<br />
-              Hóa đơn đã được in thành công.
+        ) : (
+          <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500">
+            <p className="text-base font-bold text-slate-700">Chưa chọn phòng quyết toán</p>
+            <p className="text-xs text-slate-400 mt-1">
+              Vui lòng nhấp vào một phòng đang lưu trú (Occupied) ở cột bên trái để bắt đầu thanh lý.
             </p>
-            <div className="flex gap-3 w-full">
+          </div>
+        )}
+      </div>
+
+      {/* Modal Hóa đơn tài chính VAT (S1) */}
+      {showInvoiceModal && selectedRoom && currentBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowInvoiceModal(false)} />
+          <div className="relative z-10 w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl p-6">
+            <div className="border-b pb-4 mb-4 text-center">
+              <span className="text-xs font-bold text-blue-600 uppercase tracking-widest block">
+                KHÁCH SẠN HST HOTEL • PHIẾU THANH LÝ QUYẾT TOÁN
+              </span>
+              <h3 className="text-xl font-black text-slate-900 mt-1">HÓA ĐƠN DỊCH VỤ LƯU TRÚ</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Số HĐ: HD-{Math.floor(100000 + Math.random() * 900000)} • Ngày: {new Date().toLocaleDateString('vi-VN')}</p>
+            </div>
+
+            <div className="space-y-3 text-xs border-b pb-4">
+              <div className="grid grid-cols-2 gap-2 text-slate-700">
+                <p>Khách hàng: <strong>{currentBooking.guestName}</strong></p>
+                <p>Số CCCD: <strong className="font-mono">{currentBooking.cccd}</strong></p>
+                <p>Mã đặt phòng: <strong className="font-mono">{currentBooking.id}</strong></p>
+                <p>Phòng trả: <strong className="font-mono">{selectedRoom.id}</strong> ({selectedRoom.type})</p>
+                <p>Giờ trả phòng: <strong>{checkoutTime}</strong></p>
+                <p>Hình thức: <strong>{settlementMethod}</strong></p>
+              </div>
+            </div>
+
+            {/* Chi tiết bảng kê */}
+            <div className="py-4 border-b space-y-2 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span>Tiền phòng còn lại:</span>
+                <span>{formatVND(remainingRoomFee)}</span>
+              </div>
+              {lateSurcharge.fee > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Phụ thu trả trễ:</span>
+                  <span>+{formatVND(lateSurcharge.fee)}</span>
+                </div>
+              )}
+              {totalMinibar > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Minibar tiêu thụ:</span>
+                  <span>+{formatVND(totalMinibar)}</span>
+                </div>
+              )}
+              {damageFee > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Bồi thường tài sản ({damageReason || 'Hư hại'}):</span>
+                  <span>+{formatVND(damageFee)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-slate-600">
+                <span>Khấu trừ tiền cọc thiết bị:</span>
+                <span>-{formatVND(securityDepositRefundable)}</span>
+              </div>
+
+              <div className="border-t pt-2 flex justify-between text-sm font-bold text-slate-900">
+                <span>{finalBalance >= 0 ? 'Tổng thu thêm:' : 'Tổng hoàn cọc thừa:'}</span>
+                <span className={finalBalance >= 0 ? 'text-rose-600' : 'text-emerald-600'}>
+                  {formatVND(Math.abs(finalBalance))}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-emerald-50 rounded-xl text-emerald-800 text-xs flex items-center gap-2 mt-4">
+              <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+              <span>
+                Thủ tục hoàn tất! Phòng <strong>{selectedRoom.id}</strong> đã chuyển trạng thái sang <strong>Chờ dọn dẹp (Dirty)</strong>.
+              </span>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
               <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Printer className="size-3.5" /> In hóa đơn
+              </button>
+              <button
+                type="button"
                 onClick={() => {
-                  setCheckoutComplete(false);
-                  setSelectedRoom(null);
-                  setPaymentSuccess(false);
+                  setShowInvoiceModal(false);
+                  setSelectedRoomId(null);
                 }}
-                className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors text-sm"
+                className="rounded-lg bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700"
               >
                 Đóng
               </button>
-              <button
-                onClick={() => setShowPrintInvoice(true)}
-                className="flex-1 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors text-sm shadow"
-              >
-                <Printer className="h-4 w-4" /> Xuất PDF
-              </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Printable Invoice */}
-      {showPrintInvoice && selectedRoom && (
-        <div className="fixed inset-0 z-[100] bg-slate-100 overflow-y-auto p-8">
-          <div
-            id="invoice-print"
-            className="max-w-3xl mx-auto bg-white shadow-2xl border border-slate-200 p-10 rounded-xl relative"
-          >
-            <button
-              onClick={() => setShowPrintInvoice(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:bg-slate-100 p-2 rounded-full"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            {/* Invoice Header */}
-            <div className="flex justify-between items-start border-b-2 border-slate-800 pb-6 mb-8">
-              <div>
-                <Image
-                  src="/images/logo.png"
-                  alt="Thad Hotel Logo"
-                  width={250}
-                  height={80}
-                  style={{ width: 'auto', height: '80px' }}
-                  className="object-contain mb-3"
-                  priority
-                />
-                <p className="text-sm text-slate-500">123 Đường Du Lịch, Quận 1, TP. Hồ Chí Minh</p>
-                <p className="text-sm text-slate-500">Tel: 0236 3838 888 | contact@thadhotel.vn</p>
-              </div>
-              <div className="text-right">
-                <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-widest">Hóa đơn</h2>
-                <p className="text-sm text-slate-500 mt-1">Số: <span className="font-semibold text-slate-800">INV-{new Date().getTime().toString().slice(-6)}</span></p>
-                <p className="text-sm text-slate-500">Ngày: <span className="font-semibold text-slate-800">{new Date().toLocaleDateString('vi-VN')}</span></p>
-              </div>
-            </div>
-
-            {/* Guest & Room Info */}
-            <div className="grid grid-cols-2 gap-8 mb-8">
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Khách hàng</p>
-                <p className="text-lg font-bold text-slate-800">{selectedRoom.name}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Thông tin phòng</p>
-                <p className="font-semibold text-slate-800">Phòng {selectedRoom.id} ({selectedRoom.type})</p>
-                <p className="text-sm text-slate-600">{selectedRoom.checkIn} → {selectedRoom.checkout}</p>
-                <p className="text-sm text-slate-600">{selectedRoom.days} đêm</p>
-              </div>
-            </div>
-
-            {/* Invoice Table */}
-            <table className="w-full mb-8 text-sm">
-              <thead>
-                <tr className="bg-slate-100 text-slate-600">
-                  <th className="text-left py-3 px-4 font-semibold rounded-l-lg">Hạng mục</th>
-                  <th className="text-center py-3 px-4 font-semibold">Đơn giá</th>
-                  <th className="text-center py-3 px-4 font-semibold">SL</th>
-                  <th className="text-right py-3 px-4 font-semibold rounded-r-lg">Thành tiền</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                <tr>
-                  <td className="py-4 px-4">Tiền phòng ({selectedRoom.type})</td>
-                  <td className="py-4 px-4 text-center">{selectedRoom.price.toLocaleString('vi-VN')}đ</td>
-                  <td className="py-4 px-4 text-center">{selectedRoom.days}</td>
-                  <td className="py-4 px-4 text-right font-medium text-slate-800">{(selectedRoom.price * selectedRoom.days).toLocaleString('vi-VN')}đ</td>
-                </tr>
-                <tr>
-                  <td className="py-4 px-4">Nước suối x2</td>
-                  <td className="py-4 px-4 text-center">20.000đ</td>
-                  <td className="py-4 px-4 text-center">2</td>
-                  <td className="py-4 px-4 text-right font-medium text-slate-800">40.000đ</td>
-                </tr>
-                <tr>
-                  <td className="py-4 px-4">Giặt ủi</td>
-                  <td className="py-4 px-4 text-center">150.000đ</td>
-                  <td className="py-4 px-4 text-center">1</td>
-                  <td className="py-4 px-4 text-right font-medium text-slate-800">150.000đ</td>
-                </tr>
-                <tr>
-                  <td className="py-4 px-4 text-rose-600">Phụ thu trả phòng trễ</td>
-                  <td className="py-4 px-4 text-center">300.000đ</td>
-                  <td className="py-4 px-4 text-center">1</td>
-                  <td className="py-4 px-4 text-right font-bold text-rose-600">300.000đ</td>
-                </tr>
-                {extraFees.map((fee) => (
-                  <tr key={fee.id}>
-                    <td className="py-4 px-4">{fee.name}</td>
-                    <td className="py-4 px-4 text-center">{fee.amount.toLocaleString('vi-VN')}đ</td>
-                    <td className="py-4 px-4 text-center">1</td>
-                    <td className="py-4 px-4 text-right font-medium text-slate-800">{fee.amount.toLocaleString('vi-VN')}đ</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Totals */}
-            <div className="flex justify-end mb-12">
-              <div className="w-72 space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Cộng tiền dịch vụ</span>
-                  <span className="font-semibold text-slate-800">{((selectedRoom.price * selectedRoom.days) + serviceFees + lateFee + totalExtraFees).toLocaleString('vi-VN')}đ</span>
-                </div>
-                <div className="flex justify-between text-emerald-600">
-                  <span>Trừ tiền cọc (Deposit)</span>
-                  <span className="font-semibold">-1.000.000đ</span>
-                </div>
-                <div className="flex justify-between items-center pt-3 border-t-2 border-slate-800">
-                  <span className="font-bold text-slate-800 text-base">Tổng thanh toán</span>
-                  <span className="font-black text-blue-600 text-xl">{totalAmount.toLocaleString('vi-VN')}đ</span>
-                </div>
-                <div className="flex justify-between text-slate-400 text-xs pt-1">
-                  <span>Phương thức:</span>
-                  <span className="font-semibold uppercase">{paymentMethod === 'card' ? 'Thẻ / Chuyển khoản' : 'Tiền mặt'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Signatures */}
-            <div className="flex justify-between text-center text-sm border-t border-slate-100 pt-8">
-              <div>
-                <p className="font-bold text-slate-800 mb-16">Khách hàng</p>
-                <p className="text-slate-400 italic">(Ký, ghi rõ họ tên)</p>
-              </div>
-              <div>
-                <p className="font-bold text-slate-800 mb-16">Nhân viên Lễ tân</p>
-                <p className="text-slate-400 italic">(Ký, ghi rõ họ tên)</p>
-              </div>
-            </div>
-
-            <div className="mt-10 text-center text-xs text-slate-400 border-t border-slate-100 pt-5">
-              Cảm ơn quý khách đã tin tưởng và sử dụng dịch vụ của THAD HOTEL!
-            </div>
-          </div>
-
-          {/* Print Button */}
-          <div className="fixed bottom-8 right-8">
-            <button
-              onClick={handlePrint}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-2xl flex items-center gap-2 transition-all hover:scale-105"
-            >
-              <Printer className="h-5 w-5" /> In hóa đơn
-            </button>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
